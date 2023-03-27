@@ -153,7 +153,6 @@ class MinNormSolver:
             for j in range(n):
                 grad_mat[i,j] = dps[(i, j)]
                 
-
         while iter_count < MinNormSolver.MAX_ITER:
             grad_dir = -1.0*np.dot(grad_mat, sol_vec)
             new_point = MinNormSolver._next_point(sol_vec, grad_dir, n)

@@ -9,7 +9,7 @@ import math
 import argparse
 from fedlab.utils.functional import setup_seed
 
-NUM_USER = 100
+NUM_USER = 130
 
 def softmax(x):
     ex = np.exp(x)
@@ -18,7 +18,7 @@ def softmax(x):
 
 
 def generate_synthetic(alpha, beta, iid):
-    dimension = 60
+    dimension = 100
     NUM_CLASS = 10
     
     samples_per_user = np.random.lognormal(4, 2, (NUM_USER)).astype(int) + 50
@@ -90,7 +90,7 @@ def main():
     train_data = {'users': [], 'user_data':{}, 'num_samples':[]}
     test_data = {'users': [], 'user_data':{}, 'num_samples':[]}
 
-    path = "./synthetic/data_{}_{}_num{}_seed{}".format(args.a, args.b, NUM_USER, args.seed)
+    path = "./datasets/synthetic/data_{}_{}_num{}_seed{}".format(args.a, args.b, NUM_USER, args.seed)
     # path = "./synthetic/data_{}_{}_seed{}".format(args.a, args.b, args.seed)
     if os.path.exists(path) is not True:
         os.makedirs(path)
