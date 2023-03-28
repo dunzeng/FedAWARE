@@ -46,7 +46,7 @@ class SyntheticDataset(FedDataset):
             os.path.join(self.path, type, "data{}.pkl".format(id)))
         return dataset
 
-    def get_dataloader(self, id, batch_size=1024, type="train"):
+    def get_dataloader(self, id, batch_size=None, type="train"):
         dataset = self.get_dataset(id, type)
         batch_size = len(dataset) if batch_size is None else batch_size
         data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
