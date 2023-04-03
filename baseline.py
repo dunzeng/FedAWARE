@@ -168,8 +168,8 @@ def parse_args():
     parser.add_argument('-dataset', type=str, default="synthetic")
     parser.add_argument('-dseed', type=int, default=0) # data seed
 
-    parser.add_argument('-a', type=float, default=1.0)
-    parser.add_argument('-b', type=float, default=1.0)
+    parser.add_argument('-a', type=float, default=0.0)
+    parser.add_argument('-b', type=float, default=0.0)
 
     # mgda, fedavg, mgda+
     parser.add_argument('-method', type=str, default="mgda")
@@ -207,8 +207,29 @@ if args.dataset == "synthetic":
     gen_test_data = ConcatDataset([dataset.get_dataset(i, "test") for i in range(100, 130)])
     gen_test_loader = DataLoader(gen_test_data, batch_size=1024)
 
-    weights = np.array([len(dataset.get_dataset(i, "test")) for i in range(args.num_clients)])
+    weights = np.array([len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)])
     weights = weights/weights.sum()
+elif args.dataset == "mnist":
+    model = MLP(784,10)
+    dataset = PartitionedMNIST(root="./datasets/mnist/",
+                         path="./datasets/mnist/fedmnist/",
+                         num_clients=args.num_clients,
+                         partition="noniid-labeldir",
+                         dir_alpha=0.3,
+                         seed=args.dseed,
+                         preprocess=args.preprocess,
+                         download=True,
+                         verbose=True,
+                         transform=transforms.Compose(
+                             [transforms.ToPILImage(), transforms.ToTensor()]))
+    
+    weights = np.array([len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)])
+    weights = weights/weights.sum()
+
+    test_data = torchvision.datasets.MNIST(root="./datasets/mnist/",
+                                       train=False,
+                                       transform=transforms.ToTensor())
+    gen_test_loader = DataLoader(test_data, batch_size=1024)
 else: 
     assert False
 
@@ -252,7 +273,7 @@ while handler.if_stop is False:
     # 
     acc_vec, loss_vec = [], []
     for i in range(args.num_clients):
-        test_data = dataset.get_dataset(i, "test")
+        test_data = dataset.get_dataset(i, "train")
         test_loader = DataLoader(test_data, batch_size=1024)
         tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), test_loader)
         acc_vec.append(tacc)
@@ -272,7 +293,7 @@ while handler.if_stop is False:
     writer.add_scalar('Loss/Generalization/{}'.format(args.dataset), tloss, t)
     writer.add_scalar('Accuracy/Generalization/{}'.format(args.dataset), tacc, t)
 
-    print("Round {}, Loss {:.4f}-{:.4f}, Test Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, loss_vec.dot(w), loss_vec.std(), acc_vec.dot(w), tacc, tloss))
+    print("Round {}, Loss {:.4f}-{:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, loss_vec.dot(w), loss_vec.std(), acc_vec.dot(w), tacc, tloss))
     
 
 # %%
