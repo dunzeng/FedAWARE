@@ -48,24 +48,7 @@ from min_norm_solvers import MinNormSolver, gradient_normalizers
 from torchvision import transforms
 from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from fedlab.models.mlp import MLP
-
-class UniformSampler:
-    def __init__(self, n, probs):
-        self.name = "uniform"
-        self.n = n
-        self.p = probs
-
-    def sample(self, k):
-        if k == self.n:
-            return np.arange(self.n)
-        else:
-            sampled = np.random.choice(self.n, k, p=self.p, replace=False)
-            self.last_sampled = sampled, self.p[sampled]
-            return np.sort(sampled)
-        
-    def update(self, probs, beta=1):
-        self.p = (1-beta)*self.p + beta*probs
-        print(self.p)
+from mode import UniformSampler
 
 def solver(weights, k, n):
         norms = np.sqrt(weights)
@@ -150,6 +133,7 @@ class Server_MomentumGradientCache(SyncServerHandler):
 
         self.args = args
 
+        self.C = args.C # gradient clipping
         self.momentum = [torch.zeros_like(self.model_parameters) for _ in range(self.n)]
         self.alpha = alpha
         self.solver = MinNormSolver
@@ -158,11 +142,14 @@ class Server_MomentumGradientCache(SyncServerHandler):
     def momentum_update(self, gradients, indices):
         for grad, idx in zip(gradients, indices):
             self.momentum[idx] = (1-self.alpha)*self.momentum[idx] + self.alpha*grad
+        
+        # norms = np.max((np.array([torch.norm(grad, p=2, dim=0).item() for grad in self.momentum])/self.C, np.ones_like(self.num_clients)), axis=0)
         norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in self.momentum])
-        norm_momentum = [self.momentum[i]/norms[i] for i in range(self.num_clients)]
+        norm_momentum = [self.momentum[i]/n for i, n in enumerate(norms)]
+
         sol, val = self.solver.find_min_norm_element_FW(norm_momentum)
         print("FW solver - val {},\n lambda: {}".format(val, str(sol)))
-        self.stats["count"] += sol>0
+        # self.stats["count"] += sol>0
         # sol = sol/sol.sum()
         assert sol.sum()-1 < 1e-5
         return sol, norm_momentum
@@ -181,8 +168,9 @@ class Server_MomentumGradientCache(SyncServerHandler):
     def global_update(self, buffer):
         # print("Theta {:.4f}, Ws {}".format(self.theta, self.ws))
         gradient_list = [torch.sub(self.model_parameters, ele[0]) for ele in buffer]
-        sol, norm_momentum = self.momentum_update(gradient_list, np.arange(args.num_clients))
-        # self.sampler.update(sol)
+        indices, _ = self.sampler.last_sampled
+        sol, norm_momentum = self.momentum_update(gradient_list, indices)
+        self.sampler.update(sol)
         # indices = np.arange(args.num_clients)
         # norms = np.array([torch.norm(self.momentum[i], p=2, dim=0).item() for i in indices])
         # norm_momentum = [self.momentum[i]/norms[i] for i in indices]
@@ -217,9 +205,12 @@ def parse_args():
 
     parser.add_argument('-a', type=float, default=0.0)
     parser.add_argument('-b', type=float, default=0.0)
+    parser.add_argument('-dir', type=float, default=0.1)
+    parser.add_argument('-C', type=float, default=1.0)
+    parser.add_argument('-query_freq', type=int, default=20)
 
     # MGDA
-    parser.add_argument('-alpha', type=float, default=0.8)
+    parser.add_argument('-alpha', type=float, default=1)
     parser.add_argument('-beta', type=float, default=1)
     return parser.parse_args()
 
@@ -261,10 +252,10 @@ if args.dataset == "synthetic":
 elif args.dataset == "mnist":
     model = MLP(784,10)
     dataset = PartitionedMNIST(root="./datasets/mnist/",
-                         path="./datasets/mnist/fedmnist/",
+                         path="./datasets/mnist/fedmnist_{}/".format(args.dir),
                          num_clients=args.num_clients,
                          partition="noniid-labeldir",
-                         dir_alpha=0.3,
+                         dir_alpha=args.dir,
                          seed=args.dseed,
                          preprocess=args.preprocess,
                          download=True,
@@ -304,7 +295,7 @@ while handler.if_stop is False:
     print("running..")
     # server side
     broadcast = handler.downlink_package
-    if t==0:
+    if t%args.query_freq==0:
         sampled_clients = handler.sample_clients(args.num_clients)
     else:
         sampled_clients = handler.sample_clients(args.k)
@@ -325,6 +316,5 @@ while handler.if_stop is False:
     writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
     writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
 
-    print("Round {}, Generalization: {:.4f}-{:.4f}".format(t, tacc, tloss))
-    # print("Round {}, Loss {:.4f}-{:.4f}, Accuracy: {:.4f}-{:.4f}, Generalization: {:.4f}-{:.4f}".format(t, loss_vec.dot(weights), loss_vec.std(), acc_vec.dot(weights), acc_vec.std(), tacc, tloss))
+    print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
     torch.save(handler.stats, os.path.join(path, "stats.pkl"))

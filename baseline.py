@@ -35,67 +35,17 @@ from fedlab.utils.functional import evaluate, setup_seed
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 
 from synthetic_dataset import SyntheticDataset
-
 from model import ToyCifarNet, LinearReg
 from scipy.special import softmax
 import time
 from copy import deepcopy
 
+from mode import FedAvgSerialClientTrainer, UniformSampler, solver
+
 from torch.utils.tensorboard import SummaryWriter
 
 from min_norm_solvers import MinNormSolver, gradient_normalizers
 
-class UniformSampler:
-    def __init__(self, n, probs):
-        self.name = "uniform"
-        self.n = n
-        self.p = probs
-
-    def sample(self, k):
-        sampled = np.random.choice(self.n, k, p=self.p, replace=False)
-        self.last_sampled = sampled, self.p[sampled]
-        return np.sort(sampled)
-        
-    def update(self, probs, beta=1):
-        self.p = (1-beta)*self.p + beta*probs
-
-def solver(weights, k, n):
-        norms = np.sqrt(weights)
-        idx = np.argsort(norms)
-        probs = np.zeros(len(norms))
-        l=0
-        for l, id in enumerate(idx):
-            l = l + 1
-            if k+l-n > sum(norms[idx[0:l]])/norms[id]:
-                l -= 1
-                break
-        
-        m = sum(norms[idx[0:l]])
-        for i in range(len(idx)):
-            if i <= l:
-                probs[idx[i]] = (k+l-n)*norms[idx[i]]/m
-            else:
-                probs[idx[i]] = 1
-        return np.array(probs)
-
-class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
-    """Federated client with local SGD solver."""
-    def query_loss(self):
-        loss = []
-        acc = []
-        for i in range(self.num_clients):
-            test_loader = self.dataset.get_dataloader(i)
-            eval_loss, eval_acc = evaluate(self._model, nn.CrossEntropyLoss(), test_loader)
-            loss.append(eval_loss)
-            acc.append(acc)
-        return np.array(loss), np.array(acc)
-    
-    def local_process(self, payload, id_list):
-        model_parameters = payload[0]
-        for id in tqdm(id_list):
-            data_loader = self.dataset.get_dataloader(id)
-            pack = self.train(model_parameters, data_loader)
-            self.cache.append(pack)
 
 class Server_MomentumGradientCache(SyncServerHandler):
     def setup_optim(self, sampler, args):  
@@ -104,6 +54,7 @@ class Server_MomentumGradientCache(SyncServerHandler):
         self.round_clients = int(self.sample_ratio*self.n)
         self.sampler = sampler
 
+        self.args = args
         self.lr = args.glr
         self.k = args.k
         self.method = args.method
@@ -142,14 +93,15 @@ class Server_MomentumGradientCache(SyncServerHandler):
             assert val > 1e-5
             estimates = Aggregators.fedavg_aggregate(normlized_gradients, sol)
         elif self.method == "fedavg":
-            estimates = Aggregators.fedavg_aggregate(gradient_list)
+            indices, _ = self.sampler.last_sampled
+            estimates = Aggregators.fedavg_aggregate(gradient_list, self.args.weights[indices])
 
         serialized_parameters = self.model_parameters - self.lr*estimates
         SerializationTool.deserialize_model(self._model, serialized_parameters)
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument('-num_clients', type=int)
     parser.add_argument('-com_round', type=int)
     parser.add_argument('-sample_ratio', type=float)
@@ -170,21 +122,20 @@ def parse_args():
 
     parser.add_argument('-a', type=float, default=0.0)
     parser.add_argument('-b', type=float, default=0.0)
+    parser.add_argument('-dir', type=float, default=0.1)
 
     # mgda, fedavg, mgda+
-    parser.add_argument('-method', type=str, default="mgda")
+    parser.add_argument('-method', type=str, default="fedavg")
 
     return parser.parse_args()
 
 args = parse_args()
 
-# if args.sampler in ['arbi', 'independent', 'optimal']:
+setup_seed(args.seed)
 args.k = int(args.num_clients*args.sample_ratio)
 
 # format
 dataset = args.dataset
-
-setup_seed(args.seed)
 if args.dataset == "synthetic":
     dataset = "synthetic_{}_{}".format(args.a, args.b)
 
@@ -212,10 +163,10 @@ if args.dataset == "synthetic":
 elif args.dataset == "mnist":
     model = MLP(784,10)
     dataset = PartitionedMNIST(root="./datasets/mnist/",
-                         path="./datasets/mnist/fedmnist/",
+                         path="./datasets/mnist/fedmnist_{}/".format(args.dir),
                          num_clients=args.num_clients,
                          partition="noniid-labeldir",
-                         dir_alpha=0.3,
+                         dir_alpha=args.dir,
                          seed=args.dseed,
                          preprocess=args.preprocess,
                          download=True,
@@ -225,6 +176,7 @@ elif args.dataset == "mnist":
     
     weights = np.array([len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)])
     weights = weights/weights.sum()
+    args.weights = weights
 
     test_data = torchvision.datasets.MNIST(root="./datasets/mnist/",
                                        train=False,
@@ -233,13 +185,12 @@ elif args.dataset == "mnist":
 else: 
     assert False
 
-# probs = np.ones(args.num_clients)/args.num_clients
 if args.method == "mgda":
     sampler = UniformSampler(args.num_clients, np.ones(args.num_clients)/float(args.num_clients))
 if args.method == "fedavg":
-    sampler = UniformSampler(args.num_clients, weights)
-
-
+    probs = np.ones(args.num_clients)/args.num_clients
+    sampler = UniformSampler(args.num_clients, probs)
+    
 trainer = FedAvgSerialClientTrainer(model, args.num_clients, cuda=True)
 trainer.setup_optim(args.epochs, args.batch_size, args.lr)
 trainer.setup_dataset(dataset)
@@ -254,8 +205,6 @@ handler.setup_optim(sampler, args)
 
 t = 0
 
-json.dump(vars(args), open(os.path.join(path, "config.json"), "w"))
-
 while handler.if_stop is False:
     print("running..")
     # server side
@@ -263,37 +212,19 @@ while handler.if_stop is False:
     sampled_clients = handler.sample_clients(args.k)
 
     # client side
-    trainer.local_process(broadcast, sampled_clients)
+    train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
     full_info = trainer.uplink_package
     
     for pack in full_info:
         handler.load(pack)
 
     t += 1
-    # 
-    acc_vec, loss_vec = [], []
-    for i in range(args.num_clients):
-        test_data = dataset.get_dataset(i, "train")
-        test_loader = DataLoader(test_data, batch_size=1024)
-        tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), test_loader)
-        acc_vec.append(tacc)
-        loss_vec.append(tloss)
-
-    w = weights
-    acc_vec, loss_vec = np.array(acc_vec), np.array(loss_vec)
-
     tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
     
-    writer.add_scalar('Loss/Avg/{}'.format(args.dataset), loss_vec.dot(w), t)
-    writer.add_scalar('Loss/Std/{}'.format(args.dataset), loss_vec.std(), t)
+    writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
+    writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
 
-    writer.add_scalar('Accuracy/Avg/{}'.format(args.dataset), acc_vec.dot(w), t)
-    # writer.add_scalar('Accuracy/Std/{}'.format(args.dataset), acc_vec.std(), t)
+    writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
+    writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
 
-    writer.add_scalar('Loss/Generalization/{}'.format(args.dataset), tloss, t)
-    writer.add_scalar('Accuracy/Generalization/{}'.format(args.dataset), tacc, t)
-
-    print("Round {}, Loss {:.4f}-{:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, loss_vec.dot(w), loss_vec.std(), acc_vec.dot(w), tacc, tloss))
-    
-
-# %%
+    print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
