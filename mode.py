@@ -50,10 +50,10 @@ from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from fedlab.models.mlp import MLP
 
 class UniformSampler:
-    def __init__(self, n, probs):
+    def __init__(self, n, probs=None):
         self.name = "uniform"
         self.n = n
-        self.p = probs
+        self.p = probs if probs is not None else np.ones(n)/float(n)
 
     def sample(self, k):
         if k == self.n:

@@ -47,6 +47,8 @@ from torch.utils.tensorboard import SummaryWriter
 from min_norm_solvers import MinNormSolver, gradient_normalizers
 from settings import get_settings
 
+METHOD = "FedMGDA+"
+
 class Server_MomentumGradientCache(SyncServerHandler):
     def setup_optim(self, sampler, args):  
         self.n = self.num_clients
@@ -153,8 +155,6 @@ json.dump(vars(args), open(os.path.join(path, "config.json"), "w"))
 model, dataset, weights, gen_test_loader = get_settings(args)
 args.weights = weights
 
-if args.method == "mgda":
-    sampler = UniformSampler(args.num_clients, np.ones(args.num_clients)/float(args.num_clients))
 if args.method == "fedavg":
     probs = np.ones(args.num_clients)/args.num_clients
     sampler = UniformSampler(args.num_clients, probs)

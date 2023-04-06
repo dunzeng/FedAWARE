@@ -50,24 +50,8 @@ from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from fedlab.models.mlp import MLP
 from mode import UniformSampler
 
-def solver(weights, k, n):
-        norms = np.sqrt(weights)
-        idx = np.argsort(norms)
-        probs = np.zeros(len(norms))
-        l=0
-        for l, id in enumerate(idx):
-            l = l + 1
-            if k+l-n > sum(norms[idx[0:l]])/norms[id]:
-                l -= 1
-                break
-        
-        m = sum(norms[idx[0:l]])
-        for i in range(len(idx)):
-            if i <= l:
-                probs[idx[i]] = (k+l-n)*norms[idx[i]]/m
-            else:
-                probs[idx[i]] = 1
-        return np.array(probs)
+from settings import get_settings
+
 
 class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
     """Federated client with local SGD solver."""
@@ -148,8 +132,8 @@ class Server_MomentumGradientCache(SyncServerHandler):
         norm_momentum = [self.momentum[i]/n for i, n in enumerate(norms)]
 
         sol, val = self.solver.find_min_norm_element_FW(norm_momentum)
-        print("FW solver - val {},\n lambda: {}".format(val, str(sol)))
-        # self.stats["count"] += sol>0
+        print("FW solver - val {} density {}, \n lambda: {}".format(val, (sol>0).sum(), str(sol)))
+        self.stats["count"] += sol>0
         # sol = sol/sol.sum()
         assert sol.sum()-1 < 1e-5
         return sol, norm_momentum
@@ -193,25 +177,25 @@ def parse_args():
     parser.add_argument('-glr', type=float)
 
     # data & reproduction
-    
     parser.add_argument('-preprocess', type=bool, default=False)
-    parser.add_argument('-seed', type=int, default=0) # run seed
-    
-    # setting
     parser.add_argument('-dataset', type=str, default="synthetic")
-    parser.add_argument('-solver', type=str, default="fedavg")
-    parser.add_argument('-freq', type=int, default=10)
+    parser.add_argument('-partition', type=str, default="dir") # dir, path
+    parser.add_argument('-dir', type=float, default=0.1) # direchlet
     parser.add_argument('-dseed', type=int, default=0) # data seed
+    parser.add_argument('-seed', type=int, default=0) # run seed
 
+    # synthetic
     parser.add_argument('-a', type=float, default=0.0)
     parser.add_argument('-b', type=float, default=0.0)
-    parser.add_argument('-dir', type=float, default=0.1)
+    
+    # setting
+    parser.add_argument('-solver', type=str, default="fedavg")
+    parser.add_argument('-freq', type=int, default=10)
     parser.add_argument('-C', type=float, default=1.0)
-    parser.add_argument('-query_freq', type=int, default=20)
+    parser.add_argument('-query_freq', type=int, default=1e5)
 
-    # MGDA
+    # momentum
     parser.add_argument('-alpha', type=float, default=1)
-    parser.add_argument('-beta', type=float, default=1)
     return parser.parse_args()
 
 args = parse_args()
@@ -225,54 +209,20 @@ if args.dataset == "synthetic":
     dataset = "synthetic_{}_{}".format(args.a, args.b)
 
 run_time = time.strftime("%m-%d-%H:%M")
-pareto = "pareto"
+setting = "Pareto_C{}_Q{}_Alpha{}".format(args.C, args.query_freq, args.alpha)
 
 base_dir = "logs/"
-dir = "./{}/{}_seed_{}/Run{}_NUM{}_BS{}_LR{}_EP{}_K{}_R{}_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k,
-            args.com_round, pareto)
+dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}/Setting_{}_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, setting, args.com_round)
 log = "{}".format(run_time)
 
+setup_seed(args.seed)
 path = os.path.join(dir, log)
 writer = SummaryWriter(path)
 json.dump(vars(args), open(os.path.join(path, "config.json"), "w"))
 
-setup_seed(args.seed)
+model, dataset, weights, gen_test_loader = get_settings(args)
 
-if args.dataset == "synthetic":
-    model = LinearReg(100, 10)
-    # synthetic_path = "./datasets/synthetic/data_{}_{}_num{}_seed{}".format(args.a, args.b, args.num_clients, args.dseed)
-    synthetic_path = "./datasets/synthetic/data_{}_{}_num{}_seed{}".format(args.a, args.b, 130, args.dseed)
-    dataset = SyntheticDataset(synthetic_path, synthetic_path + "/feddata/", args.preprocess)
-    
-    gen_test_data = ConcatDataset([dataset.get_dataset(i, "test") for i in range(100, 130)])
-    gen_test_loader = DataLoader(gen_test_data, batch_size=1024)
-
-    weights = np.array([len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)])
-    weights = weights/weights.sum()
-elif args.dataset == "mnist":
-    model = MLP(784,10)
-    dataset = PartitionedMNIST(root="./datasets/mnist/",
-                         path="./datasets/mnist/fedmnist_{}/".format(args.dir),
-                         num_clients=args.num_clients,
-                         partition="noniid-labeldir",
-                         dir_alpha=args.dir,
-                         seed=args.dseed,
-                         preprocess=args.preprocess,
-                         download=True,
-                         verbose=True,
-                         transform=transforms.Compose(
-                             [transforms.ToPILImage(), transforms.ToTensor()]))
-    
-    weights = np.array([len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)])
-    weights = weights/weights.sum()
-
-    test_data = torchvision.datasets.MNIST(root="./datasets/mnist/",
-                                       train=False,
-                                       transform=transforms.ToTensor())
-    gen_test_loader = DataLoader(test_data, batch_size=1024)
-else: 
-    assert False
-
+# client-trainer
 trainer = FedAvgSerialClientTrainer(model, args.num_clients, cuda=True)
 trainer.setup_optim(args.epochs, args.batch_size, args.lr)
 trainer.setup_dataset(dataset)
@@ -288,9 +238,6 @@ handler.num_clients = trainer.num_clients
 handler.setup_optim(sampler, args.alpha, args)
 
 t = 0
-
-json.dump(vars(args), open(os.path.join(path, "config.json"), "w"))
-
 while handler.if_stop is False:
     print("running..")
     # server side
