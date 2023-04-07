@@ -20,6 +20,7 @@ METHOD = "SCAFFOLD"
 
 class ScaffoldServerHandler_(ScaffoldServerHandler):
     def setup_optim(self, sampler, args):
+        super().setup_optim(args.glr)
         self.n = self.num_clients
         self.num_to_sample = int(self.sample_ratio*self.n)
         self.round_clients = int(self.sample_ratio*self.n)
@@ -72,7 +73,7 @@ def parse_args():
     # setting
     parser.add_argument('-a', type=float, default=0.0)
     parser.add_argument('-b', type=float, default=0.0)
-    parser.add_argument('-dir', type=float, default=0.1)
+    parser.add_argument('-dir', type=float, default=0.3)
 
 
     parser.add_argument('-mu', type=float)
@@ -90,7 +91,7 @@ if args.dataset == "synthetic":
 
 run_time = time.strftime("%m-%d-%H:%M")
 base_dir = "logs/"
-dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, METHOD, args.mu)
+dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, METHOD)
 log = "{}".format(run_time)
 
 path = os.path.join(dir, log)
@@ -102,7 +103,7 @@ args.weights = weights
 
 # trainer
 trainer = ScaffoldSerialClientTrainer(model, args.num_clients, cuda=True)
-trainer.setup_optim(args.epochs, args.batch_size, args.lr, args.mu)
+trainer.setup_optim(args.epochs, args.batch_size, args.lr)
 trainer.setup_dataset(dataset)
 
 # server-sampler

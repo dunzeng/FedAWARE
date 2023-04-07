@@ -212,7 +212,7 @@ run_time = time.strftime("%m-%d-%H:%M")
 setting = "Pareto_C{}_Q{}_Alpha{}".format(args.C, args.query_freq, args.alpha)
 
 base_dir = "logs/"
-dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}/Setting_{}_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, setting, args.com_round)
+dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, setting)
 log = "{}".format(run_time)
 
 setup_seed(args.seed)

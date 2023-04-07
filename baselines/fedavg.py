@@ -1,4 +1,6 @@
-# %%
+import sys
+sys.path.append("./")
+
 import random
 import numpy as np
 import json
@@ -34,8 +36,6 @@ from fedlab.contrib.dataset.partitioned_cifar10 import PartitionedCIFAR10
 from fedlab.utils.functional import evaluate, setup_seed
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 
-from synthetic_dataset import SyntheticDataset
-from model import ToyCifarNet, LinearReg
 from scipy.special import softmax
 import time
 from copy import deepcopy
@@ -47,7 +47,7 @@ from torch.utils.tensorboard import SummaryWriter
 from min_norm_solvers import MinNormSolver, gradient_normalizers
 from settings import get_settings
 
-METHOD = "FedMGDA+"
+METHOD = "FedAvg"
 
 class Server_MomentumGradientCache(SyncServerHandler):
     def setup_optim(self, sampler, args):  
@@ -61,17 +61,6 @@ class Server_MomentumGradientCache(SyncServerHandler):
         self.k = args.k
         self.method = args.method
         self.solver = MinNormSolver
-        
-    def momentum_update(self, gradients, indices):
-        for i, idx in enumerate(indices):
-            self.momentum[idx] = (1-self.alpha)*self.momentum[idx] + self.alpha*gradients[i]
-        norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in self.momentum])
-        norm_momentum = [self.momentum[i]/norms[i] for i in range(self.num_clients)]
-        sol, _ = self.solver.find_min_norm_element_FW(norm_momentum)
-        sol = sol/sol.sum()
-        # sol = 0.8*sol + 0.2 * 1.0/self.num_clients # mixing
-        assert sol.sum()-1 < 1e-5
-        return sol
     
     @property
     def num_clients_per_round(self):
@@ -86,19 +75,10 @@ class Server_MomentumGradientCache(SyncServerHandler):
     def global_update(self, buffer):
         # print("Theta {:.4f}, Ws {}".format(self.theta, self.ws))
         gradient_list = [torch.sub(self.model_parameters, ele[0]) for ele in buffer]
-
-        if self.method == "mgda":
-            norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in gradient_list])
-            normlized_gradients = [grad/n for grad, n in zip(gradient_list, norms)]
-            sol, val = self.solver.find_min_norm_element_FW(normlized_gradients)
-            print("GDA {}".format(val))
-            assert val > 1e-5
-            estimates = Aggregators.fedavg_aggregate(normlized_gradients, sol)
-        elif self.method == "fedavg":
-            indices, _ = self.sampler.last_sampled
-            # norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in gradient_list])
-            # gradient_list = [grad/n for grad, n in zip(gradient_list, norms)]
-            estimates = Aggregators.fedavg_aggregate(gradient_list, self.args.weights[indices])
+        indices, _ = self.sampler.last_sampled
+        # norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in gradient_list])
+        # gradient_list = [grad/n for grad, n in zip(gradient_list, norms)]
+        estimates = Aggregators.fedavg_aggregate(gradient_list, self.args.weights[indices])
 
         serialized_parameters = self.model_parameters - self.lr*estimates
         SerializationTool.deserialize_model(self._model, serialized_parameters)
@@ -119,16 +99,10 @@ def parse_args():
     # data & reproduction
     parser.add_argument('-dataset', type=str, default="synthetic")
     parser.add_argument('-partition', type=str, default="dir") # dir, path
+    parser.add_argument('-dir', type=float, default=0.1)
     parser.add_argument('-preprocess', type=bool, default=False)
     parser.add_argument('-seed', type=int, default=0) # run seed
     parser.add_argument('-dseed', type=int, default=0) # data seed
-
-    # setting
-    parser.add_argument('-a', type=float, default=0.0)
-    parser.add_argument('-b', type=float, default=0.0)
-    parser.add_argument('-dir', type=float, default=0.1)
-
-    # mgda, fedavg, mgda+
     parser.add_argument('-method', type=str, default="fedavg")
 
     return parser.parse_args()
@@ -140,12 +114,10 @@ args.k = int(args.num_clients*args.sample_ratio)
 
 # format
 dataset = args.dataset
-if args.dataset == "synthetic":
-    dataset = "synthetic_{}_{}".format(args.a, args.b)
 
 run_time = time.strftime("%m-%d-%H:%M")
 base_dir = "logs/"
-dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}/Setting_{}_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.method, args.com_round)
+dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, METHOD)
 log = "{}".format(run_time)
 
 path = os.path.join(dir, log)

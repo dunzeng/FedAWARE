@@ -116,7 +116,6 @@ handler.setup_optim(sampler, args)
 
 t = 0
 while handler.if_stop is False:
-    print("running..")
     # server side
     broadcast = handler.downlink_package
     sampled_clients = handler.sample_clients(args.k)

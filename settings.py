@@ -123,3 +123,6 @@ def get_settings(args):
         assert False
     
     return model, dataset, weights, gen_test_loader
+
+def get_logs(args):
+    pass

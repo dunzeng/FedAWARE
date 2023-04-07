@@ -11,7 +11,7 @@ from torch import nn
 from tqdm import tqdm
 from fedlab.utils.functional import evaluate, setup_seed, AverageMeter
 from fedlab.contrib.algorithm.fednova import FedNovaSerialClientTrainer, FedNovaServerHandler
-
+from fedlab.utils.aggregator import Aggregators
 import time
 
 from mode import UniformSampler
@@ -23,8 +23,7 @@ from settings import get_settings
 METHOD = "FedNova"
 
 class FedNovaServerHandler_(FedNovaServerHandler):
-    def setup_optim(self, sampler, args):
-        self.option = args.option   
+    def setup_optim(self, sampler, args):   
         self.n = self.num_clients
         self.num_to_sample = int(self.sample_ratio*self.n)
         self.round_clients = int(self.sample_ratio*self.n)
@@ -55,6 +54,17 @@ class FedNovaServerHandler_(FedNovaServerHandler):
             self.cache.append(pack)
         return loss_, acc_
 
+    def global_update(self, buffer):
+        taus = np.array([elem[1].item() for elem in buffer])
+        gradient_list = [torch.sub(self.model_parameters, ele[0]) for ele in buffer]
+        indices, _ = self.sampler.last_sampled
+
+        tau_eff = (taus*self.args.weights[indices]).sum()
+        reweights = (tau_eff/taus)*self.args.weights[indices]
+        delta = Aggregators.fedavg_aggregate(gradient_list, reweights)
+
+        self.set_model(self.model_parameters -  delta)
+    
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -80,8 +90,6 @@ def parse_args():
     parser.add_argument('-b', type=float, default=0.0)
     parser.add_argument('-dir', type=float, default=0.1)
 
-    # FedNova
-    parser.add_argument('-option', type=str, default="weighted_scale") # weighted_scale, uniform, weighted_com
     return parser.parse_args()
 
 args = parse_args()
@@ -96,7 +104,7 @@ if args.dataset == "synthetic":
 
 run_time = time.strftime("%m-%d-%H:%M")
 base_dir = "logs/"
-dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, METHOD, args.option)
+dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, METHOD)
 log = "{}".format(run_time)
 
 path = os.path.join(dir, log)
