@@ -29,23 +29,20 @@ from fedlab.models.mlp import MLP
 from fedlab.models.cnn import CNN_MNIST, CNN_FEMNIST
 from fedlab.contrib.algorithm.basic_server import SyncServerHandler
 from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
-from fedlab.contrib.dataset.pathological_mnist import PathologicalMNIST
-from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
-from fedlab.contrib.dataset.partitioned_cifar10 import PartitionedCIFAR10
 
-from fedlab.utils.functional import evaluate, setup_seed
+from fedlab.utils.functional import evaluate, setup_seed, AverageMeter
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 
 from scipy.special import softmax
 import time
 from copy import deepcopy
 
-from mode import FedAvgSerialClientTrainer, UniformSampler, solver
+from mode import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity
 
 from torch.utils.tensorboard import SummaryWriter
 
 from min_norm_solvers import MinNormSolver, gradient_normalizers
-from settings import get_settings
+from settings import get_settings, get_heterogeneity
 
 METHOD = "FedAvg"
 
@@ -73,15 +70,70 @@ class Server_MomentumGradientCache(SyncServerHandler):
         return clients
         
     def global_update(self, buffer):
-        # print("Theta {:.4f}, Ws {}".format(self.theta, self.ws))
         gradient_list = [torch.sub(self.model_parameters, ele[0]) for ele in buffer]
         indices, _ = self.sampler.last_sampled
-        # norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in gradient_list])
-        # gradient_list = [grad/n for grad, n in zip(gradient_list, norms)]
         estimates = Aggregators.fedavg_aggregate(gradient_list, self.args.weights[indices])
 
         serialized_parameters = self.model_parameters - self.lr*estimates
         SerializationTool.deserialize_model(self._model, serialized_parameters)
+
+class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
+    """Federated client with local SGD solver."""
+    def query_loss(self):
+        loss = []
+        acc = []
+        for i in range(self.num_clients):
+            test_loader = self.dataset.get_dataloader(i)
+            eval_loss, eval_acc = evaluate(self._model, nn.CrossEntropyLoss(), test_loader)
+            loss.append(eval_loss)
+            acc.append(acc)
+        return np.array(loss), np.array(acc)
+
+    def local_process(self, payload, id_list):
+        model_parameters = payload[0]
+        loss_ = AverageMeter()
+        acc_ = AverageMeter()
+        
+        for id in tqdm(id_list):
+            dataset = self.dataset.get_dataset(id)
+            self.batch_size, self.epochs = get_heterogeneity(args, len(dataset))
+            data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            #data_loader = self.dataset.get_dataloader(id, self.batch_size)
+            pack = self.train(model_parameters, data_loader, loss_, acc_)
+            self.cache.append(pack)
+        return loss_, acc_
+
+    def train(self, model_parameters, train_loader, loss_, acc_):
+        """Single round of local training for one client.
+
+        Note:
+            Overwrite this method to customize the PyTorch training pipeline.
+
+        Args:
+            model_parameters (torch.Tensor): serialized model parameters.
+            train_loader (torch.utils.data.DataLoader): :class:`torch.utils.data.DataLoader` for this client.
+        """
+        self.set_model(model_parameters)
+        self._model.train()
+
+        for _ in range(self.epochs):
+            for data, target in train_loader:
+                if self.cuda:
+                    data = data.cuda(self.device)
+                    target = target.cuda(self.device)
+
+                output = self.model(data)
+                loss = self.criterion(output, target)
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+
+                _, predicted = torch.max(output, 1)
+                loss_.update(loss.item())
+                acc_.update(torch.sum(predicted.eq(target)).item(), len(target))
+
+        return [self.model_parameters]
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -105,6 +157,7 @@ def parse_args():
     parser.add_argument('-dseed', type=int, default=0) # data seed
     parser.add_argument('-method', type=str, default="fedavg")
 
+    parser.add_argument('-agnostic', type=int, default=0)
     return parser.parse_args()
 
 args = parse_args()
@@ -115,10 +168,10 @@ args.k = int(args.num_clients*args.sample_ratio)
 # format
 dataset = args.dataset
 
-run_time = time.strftime("%m-%d-%H:%M")
+run_time = time.strftime("%m-%d-%H:%M:%S")
 base_dir = "logs/"
-dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, METHOD)
-log = "{}".format(run_time)
+dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round)
+log = "Setting_Agnostic{}_{}_{}".format(args.agnostic, METHOD, run_time)
 
 path = os.path.join(dir, log)
 writer = SummaryWriter(path)
@@ -155,6 +208,10 @@ while handler.if_stop is False:
     train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
     full_info = trainer.uplink_package
     
+    gradient_list = [torch.sub(handler.model_parameters, ele[0]) for ele in full_info]
+    diversity = gradient_diversity(gradient_list)
+    writer.add_scalar('Metric/Diversity/{}'.format(args.dataset), diversity, t)
+
     for pack in full_info:
         handler.load(pack)
 

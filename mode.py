@@ -49,6 +49,14 @@ from torchvision import transforms
 from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from fedlab.models.mlp import MLP
 
+def gradient_diversity(gradients, weights=None):
+    if weights is None:
+        weights = 1/np.ones(len(gradients))
+    norms = [torch.norm(grad, p=2, dim=0).item() for grad in gradients]
+    d = Aggregators.fedavg_aggregate(gradients, weights)
+    diversity = sum(norms)/torch.norm(d, p=2, dim=0).item()
+    return diversity
+
 class UniformSampler:
     def __init__(self, n, probs=None):
         self.name = "uniform"

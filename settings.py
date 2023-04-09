@@ -24,7 +24,6 @@ from synthetic_dataset import SyntheticDataset
 from model import ToyCifarNet, LinearReg
 
 
-
 from torchvision import transforms
 from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from fedlab.models.mlp import MLP
@@ -77,7 +76,7 @@ def get_settings(args):
                             dataname="cifar10",
                             num_clients=args.num_clients,
                             preprocess=args.preprocess,
-                            balance=False,
+                            balance=None,
                             partition="dirichlet",
                             dir_alpha=args.dir,
                             transform=transforms.Compose([
@@ -126,3 +125,19 @@ def get_settings(args):
 
 def get_logs(args):
     pass
+
+
+def get_heterogeneity(args, datasize):
+    if args.agnostic == 1:
+        steps = np.random.randint(1, 20+1)
+        eps = np.random.randint(1,5+1)
+        batch_size = int(np.ceil(datasize/(steps/eps)))
+        print("size {} - batch {} - ep {}".format(datasize, batch_size, eps))
+        return batch_size, eps
+    else:
+        steps = 10
+        eps = args.epochs
+        batch_size = int(np.ceil(datasize/(steps/eps)))
+        print("size {} - batch {} - ep {}".format(datasize, batch_size, eps))
+        return batch_size, eps
+        # return args.batch_size, args.epochs
