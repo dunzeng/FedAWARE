@@ -1,16 +1,18 @@
 
 import numpy as np
+import os
 from torch import nn, softmax
 from torch.utils.data import DataLoader, ConcatDataset
 import torchvision
 import torchvision.transforms as transforms
 from fedlab.contrib.dataset.basic_dataset import FedDataset
+import argparse
 
 from fedlab.utils import functional as F
 from fedlab.utils.aggregator import Aggregators
 from fedlab.utils.serialization import SerializationTool
 from fedlab.utils.functional import evaluate, get_best_gpu, AverageMeter
-
+import time
 
 from fedlab.models.mlp import MLP
 from fedlab.models.cnn import CNN_MNIST, CNN_FEMNIST
@@ -43,7 +45,7 @@ def get_settings(args):
 
     elif args.dataset == "mnist":
         model = MLP(784,10)
-        if args.partition == "dir":
+        if args.partition == "dirichlet":
             dataset = PartitionedMNIST(root="./datasets/mnist/",
                                 path="./datasets/mnist/fedmnist_{}/".format(args.dir),
                                 num_clients=args.num_clients,
@@ -55,7 +57,7 @@ def get_settings(args):
                                 verbose=True,
                                 transform=transforms.Compose(
                                     [transforms.ToPILImage(), transforms.ToTensor()]))
-        if args.partition == "path":
+        if args.partition == "pathological":
             dataset = PathologicalMNIST(root="./datasets/mnist/",
                                 path="./datasets/mnist/pathological_mnist_{}/".format(args.dseed),
                                 preprocess=args.preprocess)
@@ -70,7 +72,7 @@ def get_settings(args):
 
     elif args.dataset == "cifar10":
         model = ToyCifarNet()
-        if args.partition == "dir":
+        if args.partition == "dirichlet":
             dataset = PartitionedCIFAR10(root="./datasets/cifar10/",
                             path="./datasets/Dirichlet_cifar_{}".format(args.dir),
                             dataname="cifar10",
@@ -87,7 +89,7 @@ def get_settings(args):
                                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                                         (0.2023, 0.1994, 0.2010))
                             ]))
-        if args.partition == "path":
+        if args.partition == "pathological":
             dataset = PartitionedCIFAR10(root="./datasets/cifar10/",
                             path="./datasets/pathological_cifar",
                             dataname="cifar10",
@@ -124,8 +126,27 @@ def get_settings(args):
     return model, dataset, weights, gen_test_loader
 
 def get_logs(args):
-    pass
-
+    run_time = time.strftime("%m-%d-%H:%M:%S")
+    data_log = "{}_{}_{}".format(args.dataset, args.partition, args.dseed)
+    dir = "./logs/{}/Run{}_N{}_BS{}_LLR{}_GLR{}_EP{}_K{}_T{}".format(data_log, args.seed, args.num_clients, args.batch_size, args.lr, args.glr, args.epochs, args.k, args.com_round)
+    
+    if args.method == "fedavg":
+        log = "Setting_{}_{}".format(args.method, run_time)
+    elif args.method == "fedprox":
+        log = "Setting_{}_mu{}_{}".format(args.method, args.mu, run_time)
+    elif args.method == "scaffold":
+        log = "Setting_{}_{}".format(args.method, run_time)
+    elif args.method == "fedopt":
+        log = "Setting_{}_{}_{}".format(args.method, args.option, run_time)
+    elif args.method == "fednova":
+        log = "Setting_{}_{}".format(args.method, run_time)
+    elif args.method == "ours":
+        log = "Setting_{}_clipping{}-{}_momentum{}_{}".format(args.method, args.cmax, args.cmin, args.alpha, run_time)
+    else:
+        assert False
+    
+    path = os.path.join(dir, log)
+    return path
 
 def get_heterogeneity(args, datasize):
     if args.agnostic == 1:
@@ -135,9 +156,54 @@ def get_heterogeneity(args, datasize):
         print("size {} - batch {} - ep {}".format(datasize, batch_size, eps))
         return batch_size, eps
     else:
-        steps = 10
-        eps = args.epochs
-        batch_size = int(np.ceil(datasize/(steps/eps)))
-        print("size {} - batch {} - ep {}".format(datasize, batch_size, eps))
-        return batch_size, eps
+        return args.batch_size, args.epochs
+        # steps = 10
+        # eps = args.epochs
+        # batch_size = int(np.ceil(datasize/(steps/eps)))
+        # print("size {} - batch {} - ep {}".format(datasize, batch_size, eps))
+        # return batch_size, eps
         # return args.batch_size, args.epochs
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-method', type=str, default="None")
+
+    parser.add_argument('-num_clients', type=int)
+    parser.add_argument('-com_round', type=int)
+    parser.add_argument('-sample_ratio', type=float)
+
+    # local solver
+    parser.add_argument('-batch_size', type=int)
+    parser.add_argument('-epochs', type=int)
+    parser.add_argument('-lr', type=float)
+    parser.add_argument('-glr', type=float)
+    parser.add_argument('-agnostic', type=float, default=0)
+
+    # data & reproduction
+    parser.add_argument('-dataset', type=str, default="synthetic")
+    parser.add_argument('-partition', type=str, default="dirichlet") # dirichlet, pathological
+    parser.add_argument('-dir', type=float, default=0.1)
+    parser.add_argument('-preprocess', type=bool, default=False)
+    parser.add_argument('-seed', type=int, default=0) # run seed
+    parser.add_argument('-dseed', type=int, default=0) # data seed
+    
+    # fedprox
+    parser.add_argument('-mu', type=float)
+    
+    # fedopt
+    # adagrad, yogi, adam
+    parser.add_argument('-option', type=str, default="yogi")
+    parser.add_argument('-beta1', type=float)
+    parser.add_argument('-beta2', type=float)
+    parser.add_argument('-tau', type=float)
+    
+    # fednova
+
+    # scaffold
+
+    # ours
+    parser.add_argument('-cmax', type=float, default=1.0)
+    parser.add_argument('-cmin', type=float, default=1.0)
+    parser.add_argument('-alpha', type=float, default=1)
+
+    return parser.parse_args()

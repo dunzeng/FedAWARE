@@ -15,10 +15,9 @@ from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer, FedAvgSer
 import time
 
 from torch.utils.tensorboard import SummaryWriter
-from settings import get_settings
-from mode import UniformSampler
+from settings import get_settings, get_logs, parse_args
+from mode import UniformSampler, gradient_diversity
 
-METHOD = "FedOpt"
 
 class FedOptServerHandler_(FedAvgServerHandler):
     def setup_optim(self, sampler, args):
@@ -80,54 +79,13 @@ class FedOptServerHandler_(FedAvgServerHandler):
         self.set_model(serialized_parameters)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('-num_clients', type=int)
-    parser.add_argument('-com_round', type=int)
-    parser.add_argument('-sample_ratio', type=float)
-
-    # local solver
-    parser.add_argument('-batch_size', type=int)
-    parser.add_argument('-epochs', type=int)
-    parser.add_argument('-lr', type=float)
-    parser.add_argument('-glr', type=float)
-
-    # data & reproduction
-    parser.add_argument('-dataset', type=str, default="synthetic")
-    parser.add_argument('-partition', type=str, default="dir") # dir, path
-    parser.add_argument('-preprocess', type=bool, default=False)
-    parser.add_argument('-seed', type=int, default=0) # run seed
-    parser.add_argument('-dseed', type=int, default=0) # data seed
-
-    # setting
-    parser.add_argument('-a', type=float, default=0.0)
-    parser.add_argument('-b', type=float, default=0.0)
-    parser.add_argument('-dir', type=float, default=0.1)
-
-    # adagrad, yogi, adam
-    parser.add_argument('-option', type=str, default="yogi")
-    parser.add_argument('-beta1', type=float)
-    parser.add_argument('-beta2', type=float)
-    parser.add_argument('-tau', type=float)
-    return parser.parse_args()
 
 args = parse_args()
-
-setup_seed(args.seed)
+args.method = "fedopt"
 args.k = int(args.num_clients*args.sample_ratio)
+setup_seed(args.seed)
 
-# format
-dataset = args.dataset
-if args.dataset == "synthetic":
-    dataset = "synthetic_{}_{}".format(args.a, args.b)
-
-run_time = time.strftime("%m-%d-%H:%M")
-base_dir = "logs/"
-dir = "./{}/{}/DataSeed{}_RunSeed{}_NUM{}_BS{}_LR{}_EP{}_K{}_T{}/Setting_{}_{}".format(base_dir, dataset, args.dseed, args.seed, args.num_clients, args.batch_size, args.lr, args.epochs, args.k, args.com_round, METHOD, args.option)
-log = "{}".format(run_time)
-
-path = os.path.join(dir, log)
+path = get_logs(args)
 writer = SummaryWriter(path)
 json.dump(vars(args), open(os.path.join(path, "config.json"), "w"))
 
@@ -158,6 +116,15 @@ while handler.if_stop is False:
     # train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
     trainer.local_process(broadcast, sampled_clients)
     full_info = trainer.uplink_package
+    
+    # diversity
+    gradient_list = [torch.sub(handler.model_parameters, ele[0]) for ele in full_info]
+    diversity = gradient_diversity(gradient_list)
+    writer.add_scalar('Metric/Diversity/{}'.format(args.dataset), diversity, t)
+    
+    norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in gradient_list])
+    writer.add_scalar('Metric/MaxNorm/{}'.format(args.dataset), max(norms), t)
+    writer.add_scalar('Metric/MinNorm/{}'.format(args.dataset), min(norms), t)
     
     for pack in full_info:
         handler.load(pack)

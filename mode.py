@@ -57,6 +57,32 @@ def gradient_diversity(gradients, weights=None):
     diversity = sum(norms)/torch.norm(d, p=2, dim=0).item()
     return diversity
 
+class FeedbackSampler:
+    def __init__(self, n, probs=None):
+        self.name = "uniform"
+        self.n = n
+        self.p = probs if probs is not None else np.ones(n)/float(n)
+        self.explore = [i for i in range(n)]
+        random.shuffle(self.explore)
+        self.explored = False
+
+    def sample(self, k):
+        if len(self.explore) > 0:
+            sampled = self.explore[0:k]
+            self.explore = list(set(self.explore) - set(sampled))
+            self.last_sampled = sampled, self.p[sampled]
+            if len(self.explore)==0:
+                self.explored = True
+            return np.sort(np.array(sampled))
+        else:
+            sampled = np.random.choice(self.n, k, p=self.p, replace=False)
+            self.last_sampled = sampled, self.p[sampled]
+            return np.sort(sampled)
+        
+    def update(self, probs, beta=1):
+        self.p = (1-beta)*self.p + beta*probs
+        print(self.p)
+
 class UniformSampler:
     def __init__(self, n, probs=None):
         self.name = "uniform"
