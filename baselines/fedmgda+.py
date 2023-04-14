@@ -4,6 +4,7 @@ import os
 import argparse
 
 import torch
+from torch import nn
 from fedlab.utils.aggregator import Aggregators
 from fedlab.utils.serialization import SerializationTool
 from fedlab.utils.functional import evaluate, get_best_gpu

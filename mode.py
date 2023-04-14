@@ -54,7 +54,7 @@ def gradient_diversity(gradients, weights=None):
         weights = 1/np.ones(len(gradients))
     norms = [torch.norm(grad, p=2, dim=0).item() for grad in gradients]
     d = Aggregators.fedavg_aggregate(gradients, weights)
-    diversity = sum(norms)/torch.norm(d, p=2, dim=0).item()
+    diversity = sum(norms)/len(norms)/torch.norm(d, p=2, dim=0).item()
     return diversity
 
 class FeedbackSampler:
@@ -75,13 +75,19 @@ class FeedbackSampler:
                 self.explored = True
             return np.sort(np.array(sampled))
         else:
-            sampled = np.random.choice(self.n, k, p=self.p, replace=False)
+            nonzero_entries = sum(self.p > 0)
+            if nonzero_entries > k:
+                sampled = np.random.choice(self.n, k, p=self.p, replace=False)
+            else:
+                sampled = np.random.choice(self.n, nonzero_entries, p=self.p, replace=False)
+                remains = np.setdiff1d(np.arange(self.n), sampled)
+                uniform_sampled = np.random.choice(remains, k-nonzero_entries, replace=False)
+                sampled = np.concatenate((sampled, uniform_sampled))
             self.last_sampled = sampled, self.p[sampled]
             return np.sort(sampled)
         
     def update(self, probs, beta=1):
         self.p = (1-beta)*self.p + beta*probs
-        print(self.p)
 
 class UniformSampler:
     def __init__(self, n, probs=None):

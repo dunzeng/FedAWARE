@@ -8,6 +8,7 @@ import random
 from tqdm import tqdm
 import torch
 from torch import nn
+from torch.utils.data import DataLoader
 from fedlab.utils import functional as F
 from fedlab.utils.aggregator import Aggregators
 from fedlab.utils.serialization import SerializationTool
@@ -25,7 +26,7 @@ from min_norm_solvers import MinNormSolver, gradient_normalizers
 
 from mode import UniformSampler, gradient_diversity, FeedbackSampler
 
-from settings import get_settings, get_logs, parse_args
+from settings import get_settings, get_logs, parse_args, get_heterogeneity
 
 
 class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
@@ -45,7 +46,10 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
         loss_ = AverageMeter()
         acc_ = AverageMeter()
         for id in tqdm(id_list):
-            data_loader = self.dataset.get_dataloader(id, self.batch_size)
+            dataset = self.dataset.get_dataset(id)
+            self.batch_size, self.epochs = get_heterogeneity(args, len(dataset))
+            data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            #data_loader = self.dataset.get_dataloader(id, self.batch_size)
             pack = self.train(model_parameters, data_loader, loss_, acc_)
             self.cache.append(pack)
         return loss_, acc_

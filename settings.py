@@ -29,6 +29,8 @@ from model import ToyCifarNet, LinearReg
 from torchvision import transforms
 from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from fedlab.models.mlp import MLP
+from fedlab.core.standalone import StandalonePipeline
+
 
 def get_settings(args):
     if args.dataset == "synthetic":
@@ -127,7 +129,10 @@ def get_settings(args):
 
 def get_logs(args):
     run_time = time.strftime("%m-%d-%H:%M:%S")
-    data_log = "{}_{}_{}".format(args.dataset, args.partition, args.dseed)
+    if args.partition == "dirichlet":
+        data_log = "{}_{}_{}_{}".format(args.dataset, args.partition, args.dir, args.dseed)
+    else:
+        data_log = "{}_{}_{}".format(args.dataset, args.partition, args.dseed)
     dir = "./logs/{}/Run{}_N{}_BS{}_LLR{}_GLR{}_EP{}_K{}_T{}".format(data_log, args.seed, args.num_clients, args.batch_size, args.lr, args.glr, args.epochs, args.k, args.com_round)
     
     if args.method == "fedavg":

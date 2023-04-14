@@ -13,9 +13,9 @@ from fedlab.utils.serialization import SerializationTool
 from fedlab.utils.aggregator import Aggregators
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer, FedAvgServerHandler
 import time
-
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from settings import get_settings, get_logs, parse_args
+from settings import get_settings, get_logs, parse_args, get_heterogeneity
 from mode import UniformSampler, gradient_diversity
 
 
@@ -55,7 +55,10 @@ class FedOptServerHandler_(FedAvgServerHandler):
         loss_ = AverageMeter()
         acc_ = AverageMeter()
         for id in tqdm(id_list):
-            data_loader = self.dataset.get_dataloader(id, self.batch_size)
+            dataset = self.dataset.get_dataset(id)
+            self.batch_size, self.epochs = get_heterogeneity(args, len(dataset))
+            data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            #data_loader = self.dataset.get_dataloader(id, self.batch_size)
             pack = self.train(model_parameters, data_loader, loss_, acc_)
             self.cache.append(pack)
         return loss_, acc_
@@ -113,8 +116,7 @@ while handler.if_stop is False:
     sampled_clients = handler.sample_clients(args.k)
 
     # client side
-    # train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
-    trainer.local_process(broadcast, sampled_clients)
+    train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
     full_info = trainer.uplink_package
     
     # diversity
@@ -132,8 +134,8 @@ while handler.if_stop is False:
     t += 1
     tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
     
-    # writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
-    # writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
+    writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
+    writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
 
     writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
     writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)

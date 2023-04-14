@@ -75,8 +75,7 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
 
     def local_process(self, payload, id_list):
         model_parameters = payload[0]
-        loss_ = AverageMeter()
-        acc_ = AverageMeter()
+        loss_, acc_ = AverageMeter(), AverageMeter()
         
         for id in tqdm(id_list):
             dataset = self.dataset.get_dataset(id)
@@ -87,16 +86,7 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
             self.cache.append(pack)
         return loss_, acc_
 
-    def train(self, model_parameters, train_loader, loss_, acc_):
-        """Single round of local training for one client.
-
-        Note:
-            Overwrite this method to customize the PyTorch training pipeline.
-
-        Args:
-            model_parameters (torch.Tensor): serialized model parameters.
-            train_loader (torch.utils.data.DataLoader): :class:`torch.utils.data.DataLoader` for this client.
-        """
+    def train(self, model_parameters, train_loader, loss_, acc_): 
         self.set_model(model_parameters)
         self._model.train()
 

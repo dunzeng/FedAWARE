@@ -10,15 +10,19 @@ import torch
 from torch import nn
 from tqdm import tqdm
 from fedlab.utils.functional import evaluate, setup_seed, AverageMeter
-from fedlab.contrib.algorithm.fednova import FedNovaSerialClientTrainer, FedNovaServerHandler
+from fedlab.contrib.algorithm.fednova import FedNovaServerHandler
 from fedlab.utils.aggregator import Aggregators
-import time
+from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
 
+import time
+from torch.utils.data import DataLoader
 from mode import UniformSampler, gradient_diversity
 
 from torch.utils.tensorboard import SummaryWriter
 from min_norm_solvers import MinNormSolver, gradient_normalizers
-from settings import get_settings, get_logs, parse_args
+from settings import get_settings, get_logs, parse_args, get_heterogeneity
+
+
 
 class FedNovaServerHandler_(FedNovaServerHandler):
     def setup_optim(self, sampler, args):   
@@ -42,16 +46,6 @@ class FedNovaServerHandler_(FedNovaServerHandler):
         assert self.num_clients_per_round == len(clients)
         return clients
 
-    def local_process(self, payload, id_list):
-        model_parameters = payload[0]
-        loss_ = AverageMeter()
-        acc_ = AverageMeter()
-        for id in tqdm(id_list):
-            data_loader = self.dataset.get_dataloader(id, self.batch_size)
-            pack = self.train(model_parameters, data_loader, loss_, acc_)
-            self.cache.append(pack)
-        return loss_, acc_
-
     def global_update(self, buffer):
         taus = np.array([elem[1].item() for elem in buffer])
         gradient_list = [torch.sub(self.model_parameters, ele[0]) for ele in buffer]
@@ -63,7 +57,22 @@ class FedNovaServerHandler_(FedNovaServerHandler):
 
         self.set_model(self.model_parameters -  delta)
     
+class FedNovaSerialClientTrainer_(SGDSerialClientTrainer):
+    """Federated client with local SGD solver."""
 
+    def local_process(self, payload, id_list):
+        model_parameters = payload[0]
+        loss_, acc_ = AverageMeter(), AverageMeter()
+        for id in id_list:
+            dataset = self.dataset.get_dataset(id)
+            self.batch_size, self.epochs = get_heterogeneity(args, len(dataset))
+            data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            pack = self.train(model_parameters, data_loader, loss_, acc_)
+            tau = [torch.Tensor([len(data_loader) * self.epochs])]
+            pack += tau
+            self.cache.append(pack)
+        return loss_, acc_
+    
 args = parse_args()
 args.method = "fednova"
 args.k = int(args.num_clients*args.sample_ratio)
@@ -77,7 +86,7 @@ model, dataset, weights, gen_test_loader = get_settings(args)
 args.weights = weights
 
 # trainer
-trainer = FedNovaSerialClientTrainer(model, args.num_clients, cuda=True)
+trainer = FedNovaSerialClientTrainer_(model, args.num_clients, cuda=True)
 trainer.setup_optim(args.epochs, args.batch_size, args.lr)
 trainer.setup_dataset(dataset)
 
@@ -97,8 +106,7 @@ while handler.if_stop is False:
     sampled_clients = handler.sample_clients(args.k)
 
     # client side
-    # train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
-    trainer.local_process(broadcast, sampled_clients)
+    train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
     full_info = trainer.uplink_package
     
     # diversity
@@ -116,8 +124,8 @@ while handler.if_stop is False:
     t += 1
     tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
     
-    # writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
-    # writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
+    writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
+    writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
 
     writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
     writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
