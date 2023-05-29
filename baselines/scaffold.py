@@ -15,7 +15,7 @@ import time
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from settings import get_settings, parse_args, get_logs, get_heterogeneity
-from mode import UniformSampler, gradient_diversity
+from mode import UniformSampler, gradient_diversity, get_gradient_diversity
 
 class ScaffoldServerHandler_(ScaffoldServerHandler):
     def setup_optim(self, sampler, args):
@@ -157,7 +157,6 @@ while handler.if_stop is False:
     for pack in full_info:
         handler.load(pack)
 
-    t += 1
     tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
     
     writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
@@ -167,3 +166,4 @@ while handler.if_stop is False:
     writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
 
     print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, 0,  0, tacc, tloss))
+    t += 1

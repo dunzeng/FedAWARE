@@ -24,22 +24,20 @@ from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 from torch.utils.tensorboard import SummaryWriter
 from min_norm_solvers import MinNormSolver, gradient_normalizers
 
-from mode import UniformSampler, gradient_diversity, FeedbackSampler
+from mode import UniformSampler, gradient_diversity, FeedbackSampler, get_gradient_diversity
 
 from settings import get_settings, get_logs, parse_args, get_heterogeneity
 
+from fedlab.utils import SerializationTool
 
 class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
     """Federated client with local SGD solver."""
-    def query_loss(self):
-        loss = []
-        acc = []
-        for i in range(self.num_clients):
-            test_loader = self.dataset.get_dataloader(i)
-            eval_loss, eval_acc = evaluate(self._model, nn.CrossEntropyLoss(), test_loader)
-            loss.append(eval_loss)
-            acc.append(acc)
-        return np.array(loss), np.array(acc)
+    def setup_optim(self, epochs, batch_size, lr, optim='sgd'):
+        super().setup_optim(epochs, batch_size, lr)
+
+        if optim == 'adam':
+            self.optimizer = torch.optim.Adam(self._model.parameters, lr)
+
 
     def local_process(self, payload, id_list):
         model_parameters = payload[0]
@@ -86,6 +84,7 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
 
         return [self.model_parameters]
 
+
 class Server_MomentumGradientCache(SyncServerHandler):
     def setup_optim(self, sampler, alpha, args):  
         self.n = self.num_clients
@@ -106,7 +105,10 @@ class Server_MomentumGradientCache(SyncServerHandler):
             self.momentum[idx] = (1-self.alpha)*self.momentum[idx] + self.alpha*grad
         
         # norms = np.max((np.array([torch.norm(grad, p=2, dim=0).item() for grad in self.momentum])/self.C, np.ones_like(self.num_clients)), axis=0)
-        norms = np.array([torch.norm(grad, p=2, dim=0).item() for grad in self.momentum])
+        norms = [torch.norm(grad, p=2, dim=0).item() for grad in self.momentum]
+        norms = np.array([1 if item==0 else item for item in norms])
+        
+        # norm_momentum = norms
         norm_momentum = [self.momentum[i]/n for i, n in enumerate(norms)]
         sol, val = self.solver.find_min_norm_element_FW(norm_momentum)
         print("FW solver - val {} density {}, \n lambda: {}".format(val, (sol>0).sum(), str(sol)))
@@ -119,8 +121,8 @@ class Server_MomentumGradientCache(SyncServerHandler):
     def num_clients_per_round(self):
         return self.round_clients
            
-    def sample_clients(self, k):
-        clients = self.sampler.sample(k)
+    def sample_clients(self, k, startup=0):
+        clients = self.sampler.sample(k, startup)
         
         self.round_clients = len(clients)
         assert self.num_clients_per_round == len(clients)
@@ -135,16 +137,18 @@ class Server_MomentumGradientCache(SyncServerHandler):
             sol, norm_momentum = self.momentum_update(gradient_list, indices)
             self.sampler.update(sol) # feedback
             estimates = Aggregators.fedavg_aggregate(norm_momentum, sol)
+
+            serialized_parameters = self.model_parameters - self.lr*estimates
+            SerializationTool.deserialize_model(self._model, serialized_parameters)
         else:
             for grad, idx in zip(gradient_list, indices):
                 self.momentum[idx] = (1-self.alpha)*self.momentum[idx] + self.alpha*grad
-            estimates = Aggregators.fedavg_aggregate(gradient_list, args.weights[indices])
+            parameters = [ele[0] for ele in buffer]
+            aggregated_parameters = Aggregators.fedavg_aggregate(parameters, args.weights[indices])
+            SerializationTool.deserialize_model(self._model, aggregated_parameters)
         # indices = np.arange(args.num_clients)
         # norms = np.array([torch.norm(self.momentum[i], p=2, dim=0).item() for i in indices])
         # norm_momentum = [self.momentum[i]/norms[i] for i in indices]
-        
-        serialized_parameters = self.model_parameters - self.lr*estimates
-        SerializationTool.deserialize_model(self._model, serialized_parameters)
 
 args = parse_args()
 args.method = "ours"
@@ -178,10 +182,11 @@ while handler.if_stop is False:
     print("running..")
     # server side
     broadcast = handler.downlink_package
-    # if t%args.query_freq==0:
-    #     sampled_clients = handler.sample_clients(args.num_clients)
-    # else:
-    sampled_clients = handler.sample_clients(args.k)
+
+    if t == 0:
+        sampled_clients = handler.sample_clients(args.k, args.startup)
+    else:
+        sampled_clients = handler.sample_clients(args.k)
 
     # client side
     train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
@@ -199,7 +204,6 @@ while handler.if_stop is False:
     for pack in full_info:
         handler.load(pack)
 
-    t += 1
     tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
     
     writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
@@ -210,3 +214,4 @@ while handler.if_stop is False:
 
     print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
     torch.save(handler.stats, os.path.join(path, "stats.pkl"))
+    t += 1

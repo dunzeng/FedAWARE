@@ -22,7 +22,7 @@ from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
 from fedlab.utils.functional import evaluate, setup_seed, AverageMeter
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 
-from mode import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity
+from mode import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity, get_gradient_diversity
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -30,7 +30,7 @@ from min_norm_solvers import MinNormSolver, gradient_normalizers
 from settings import get_settings, get_heterogeneity, get_logs, parse_args
 
 
-class Server_MomentumGradientCache(SyncServerHandler):
+class FedAvgServerHandler(SyncServerHandler):
     def setup_optim(self, sampler, args):  
         self.n = self.num_clients
         self.num_to_sample = int(self.sample_ratio*self.n)
@@ -131,7 +131,7 @@ trainer.setup_optim(args.epochs, args.batch_size, args.lr)
 trainer.setup_dataset(dataset)
 
 # server-sampler
-handler = Server_MomentumGradientCache(model=model,
+handler = FedAvgServerHandler(model=model,
                         global_round=args.com_round,
                         sample_ratio=args.sample_ratio)
     
@@ -161,7 +161,6 @@ while handler.if_stop is False:
     for pack in full_info:
         handler.load(pack)
 
-    t += 1
     tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
     
     writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
@@ -171,3 +170,4 @@ while handler.if_stop is False:
     writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
 
     print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
+    t += 1
