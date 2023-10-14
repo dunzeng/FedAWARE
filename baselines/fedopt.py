@@ -16,7 +16,7 @@ import time
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from settings import get_settings, get_logs, parse_args, get_heterogeneity
-from mode import UniformSampler, gradient_diversity, get_gradient_diversity
+from utils import UniformSampler, gradient_diversity, get_gradient_diversity
 
 
 class FedOptServerHandler_(FedAvgServerHandler):

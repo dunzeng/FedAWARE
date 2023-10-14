@@ -22,7 +22,7 @@ from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
 from fedlab.utils.functional import evaluate, setup_seed, AverageMeter
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 
-from mode import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity, get_gradient_diversity
+from utils import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity, get_gradient_diversity
 
 from torch.utils.tensorboard import SummaryWriter
 

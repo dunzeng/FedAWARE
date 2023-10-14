@@ -15,7 +15,7 @@ from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 
 import time
 
-from mode import FedAvgSerialClientTrainer, UniformSampler, solver
+from utils import FedAvgSerialClientTrainer, UniformSampler, solver
 
 from torch.utils.tensorboard import SummaryWriter
 from min_norm_solvers import MinNormSolver, gradient_normalizers

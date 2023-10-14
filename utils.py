@@ -97,7 +97,6 @@ class FeedbackSampler:
         self.p = (1-beta)*self.p + beta*probs
 
 class UniformSampler:
-
     def __init__(self, n, probs=None):
         self.name = "uniform"
         self.n = n

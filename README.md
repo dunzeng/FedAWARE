@@ -1,10 +1,9 @@
+# FedAWARE
+
+ Code for paper "[Tackling Hybrid Heterogeneity on Federated Optimization via Gradient Diversity Maximization](https://arxiv.org/abs/2310.02702)".
 
 
-heterogeneity-agnostic federated learning setting
-
-
-batch_size = {16, 32, 64, 128, 256}
-epoch = {1, 3, 5, 10, 20}
+ # 
 
 
 

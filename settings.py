@@ -144,45 +144,6 @@ def get_settings(args):
                                                         (0.2023, 0.1994, 0.2010))
                                                 ]))
         gen_test_loader = DataLoader(test_data, num_workers=4, batch_size=1024)
-        
-    elif args.dataset == "cifar100":
-        model = vgg11_bn(bn=False, num_class=100)
-        #model = resnet18()
-        #model = ToyCifar100Net()
-        trainset = torchvision.datasets.CIFAR100(root="./datasets/cifar100/", train=True, download=False)
-        hetero_dir_part = CIFAR100Partitioner(trainset.targets, 
-                                args.num_clients,
-                                balance=None, 
-                                partition="dirichlet",
-                                dir_alpha=args.dir,
-                                seed=args.seed)
-        
-        dataset = PartitionedCIFAR100(root="./datasets/cifar100/",
-                            path="./datasets/Dirichlet_cifar100_{}".format(args.dir),
-                            dataname="cifar100",
-                            num_clients=args.num_clients,
-                            preprocess=args.preprocess,
-                            partitioner=hetero_dir_part,
-                            transform=transforms.Compose([
-                                # transforms.ToPILImage(),
-                                transforms.RandomCrop(32, padding=4),
-                                transforms.RandomHorizontalFlip(),
-                                transforms.ToTensor(),
-                                transforms.Normalize((0.5070751592371323, 0.48654887331495095, 0.4409178433670343),
-                                                     (0.2673342858792401, 0.2564384629170883, 0.27615047132568404))
-                            ]))
-
-        weights = np.array([len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)])
-        weights = weights/weights.sum()
-
-        test_data = torchvision.datasets.CIFAR100(root="./datasets/cifar100/",
-                                                train=False,
-                                                transform=transforms.Compose([
-                                                    transforms.ToTensor(),
-                                                    transforms.Normalize((0.5070751592371323, 0.48654887331495095, 0.4409178433670343),
-                                                                         (0.2673342858792401, 0.2564384629170883, 0.27615047132568404))
-                                                ]))
-        gen_test_loader = DataLoader(test_data, batch_size=1024, num_workers=4)
 
     else: 
         assert False
@@ -212,7 +173,7 @@ def get_logs(args):
     elif args.method == "feddyn":
         log = "Setting_{}_GLR{}_alpha{}_{}".format(args.method, args.glr, args.alpha_dyn, run_time)
     elif args.method == "ours":
-        log = "Setting_{}_GLR{}_clipping{}-{}_momentum{}_startup{}_{}".format(args.method, args.glr, args.cmax, args.cmin, args.alpha, args.startup, run_time)
+        log = "Setting_{}_GLR{}_momentum{}_startup{}_{}".format(args.method, args.glr, args.alpha, args.startup, run_time)
     else:
         assert False
     
@@ -279,8 +240,6 @@ def parse_args():
     parser.add_argument('-alpha_dyn', type=float)
 
     # ours
-    parser.add_argument('-cmax', type=float, default=1.0)
-    parser.add_argument('-cmin', type=float, default=1.0)
     parser.add_argument('-alpha', type=float, default=0.5)
     parser.add_argument('-startup', type=int, default=0)
 

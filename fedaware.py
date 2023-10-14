@@ -24,7 +24,7 @@ from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 from torch.utils.tensorboard import SummaryWriter
 from min_norm_solvers import MinNormSolver, gradient_normalizers
 
-from mode import UniformSampler, gradient_diversity, FeedbackSampler, get_gradient_diversity
+from utils import UniformSampler, gradient_diversity, FeedbackSampler, get_gradient_diversity
 
 from settings import get_settings, get_logs, parse_args, get_heterogeneity
 

@@ -16,7 +16,7 @@ from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
 
 import time
 from torch.utils.data import DataLoader
-from mode import UniformSampler, gradient_diversity, get_gradient_diversity
+from utils import UniformSampler, gradient_diversity, get_gradient_diversity
 
 from torch.utils.tensorboard import SummaryWriter
 from min_norm_solvers import MinNormSolver, gradient_normalizers
