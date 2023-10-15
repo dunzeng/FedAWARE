@@ -23,7 +23,8 @@ python fedaware.py -num_clients 100 \
                     -dataset [mnist\fmnist\cifar10] \
                     -alpha 0.5 \
                     -startup 1 \
-                    -agnostic [0\1]\
+                    -agnostic [0\1] \
+                    -preprocess 1
 ```
 
 # Citation

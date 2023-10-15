@@ -215,7 +215,7 @@ def parse_args():
     parser.add_argument('-dataset', type=str, default="synthetic")
     parser.add_argument('-partition', type=str, default="dirichlet") # dirichlet, pathological
     parser.add_argument('-dir', type=float, default=0.1)
-    parser.add_argument('-preprocess', type=bool, default=False)
+    parser.add_argument('-preprocess', type=bool, default=True)
     parser.add_argument('-seed', type=int, default=0) # run seed
     parser.add_argument('-dseed', type=int, default=0) # data seed
     
