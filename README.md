@@ -3,11 +3,11 @@
  Code for paper "[Tackling Hybrid Heterogeneity on Federated Optimization via Gradient Diversity Maximization](https://arxiv.org/abs/2310.02702)".
 
 
- # Dependencies
+## Dependencies
 
  `pip install -r requirement.txt`
 
-# Run
+## Run
 
 ```
 python fedaware.py -num_clients 100 \
@@ -27,9 +27,9 @@ python fedaware.py -num_clients 100 \
                     -preprocess 1
 ```
 
-# Citation
+## Citation
 
-Please cite our paper if you found the could useful.
+Please cite our paper if you found the code useful.
 
 ```
 @article{zeng2023tackling,
