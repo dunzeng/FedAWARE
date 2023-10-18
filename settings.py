@@ -25,20 +25,9 @@ from fedlab.core.standalone import StandalonePipeline
 
 from partitioned_cifar100 import PartitionedCIFAR100
 from partitioned_fmnist import PartitionedFMNIST, PathologicalFMNIST
+
 def get_settings(args):
-    if args.dataset == "synthetic":
-        model = LinearReg(100, 10)
-        # synthetic_path = "./datasets/synthetic/data_{}_{}_num{}_seed{}".format(args.a, args.b, args.num_clients, args.dseed)
-        synthetic_path = "./datasets/synthetic/data_{}_{}_num{}_seed{}".format(args.a, args.b, 130, args.dseed)
-        dataset = SyntheticDataset(synthetic_path, synthetic_path + "/feddata/", args.preprocess)
-        
-        gen_test_data = ConcatDataset([dataset.get_dataset(i, "test") for i in range(100, 130)])
-        gen_test_loader = DataLoader(gen_test_data, batch_size=1024)
-
-        weights = np.array([len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)])
-        weights = weights/weights.sum()
-
-    elif args.dataset == "mnist":
+    if args.dataset == "mnist":
         model = MLP(784,10)
         if args.partition == "dirichlet":
             dataset = PartitionedMNIST(root="./datasets/mnist/",

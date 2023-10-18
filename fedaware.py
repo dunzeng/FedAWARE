@@ -35,10 +35,6 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
     def setup_optim(self, epochs, batch_size, lr, optim='sgd'):
         super().setup_optim(epochs, batch_size, lr)
 
-        if optim == 'adam':
-            self.optimizer = torch.optim.Adam(self._model.parameters, lr)
-
-
     def local_process(self, payload, id_list):
         model_parameters = payload[0]
         loss_ = AverageMeter()
