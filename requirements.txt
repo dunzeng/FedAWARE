@@ -1,4 +1,6 @@
-torch
+torch==1.13.1
+transformers==4.40.2
+datasets==2.19.1
 numpy
 fedlab
 tqdm

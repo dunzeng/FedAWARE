@@ -22,17 +22,54 @@ from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
 from fedlab.utils.functional import evaluate, setup_seed, AverageMeter
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 from fedlab.contrib.algorithm.feddyn import FedDynSerialClientTrainer, FedDynServerHandler
-
+from copy import deepcopy
 
 from utils import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity, get_gradient_diversity
-
-from torch.utils.tensorboard import SummaryWriter
-
 from min_norm_solvers import MinNormSolver, gradient_normalizers
 from settings import get_settings, get_heterogeneity, get_logs, parse_args
 
+class FedDynServerHandler(SyncServerHandler):
+    """FedAvg server handler."""
+    def setup_optim(self, alpha):
+        self.alpha = alpha
+        self.h = torch.zeros_like(self.model_parameters)
 
-    
+    def global_update(self, buffer):
+        parameters_list = [ele[0] for ele in buffer]
+        deltas = sum([parameters-self.model_parameters for parameters in parameters_list])
+        self.h = self.h - self.alpha * (1.0/self.num_clients) * deltas
+        new_parameters = Aggregators.fedavg_aggregate(parameters_list) - 1.0 / self.alpha * self.h
+        self.set_model(new_parameters)
+    #     self.round += 1
+        print(f">>> global-round {self.round}")
+
+    # def load(self, payload) -> bool:
+    #     """Update global model with collected parameters from clients.
+
+    #     Note:
+    #         Server handler will call this method when its ``client_buffer_cache`` is full. User can
+    #         overwrite the strategy of aggregation to apply on :attr:`model_parameters_list`, and
+    #         use :meth:`SerializationTool.deserialize_model` to load serialized parameters after
+    #         aggregation into :attr:`self._model`.
+
+    #     Args:
+    #         payload (list[torch.Tensor]): A list of tensors passed by manager layer.
+    #     """
+    #     assert len(payload) > 0
+    #     self.client_buffer_cache.append(deepcopy(payload))
+
+    #     assert len(self.client_buffer_cache) <= self.num_clients_per_round
+
+    #     if len(self.client_buffer_cache) == self.num_clients_per_round:
+    #         self.global_update(self.client_buffer_cache)
+
+    #         # reset cache
+    #         self.client_buffer_cache = []
+
+    #         return True  # return True to end this round.
+    #     else:
+    #         return False
+
 class FedDynSerialClientTrainer_(FedDynSerialClientTrainer):
     def local_process(self, payload, id_list):
         model_parameters = payload[0]
@@ -130,13 +167,16 @@ while handler.if_stop is False:
     for pack in full_info:
         handler.load(pack)
 
-    tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
-    
-    writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
-    writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
+    if t==0 or (t+1)%args.freq == 0:
+        tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
+        
+        writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
+        writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
 
-    writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
-    writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
+        writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
+        writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
 
-    print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
+        print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
     t += 1
+
+writer.close()

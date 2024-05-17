@@ -16,14 +16,13 @@ import time
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from settings import get_settings, get_logs, parse_args, get_heterogeneity
-from utils import UniformSampler, gradient_diversity, get_gradient_diversity, FeedbackSampler
-from base_trainer import SerialClientTrainer
+from utils import UniformSampler, gradient_diversity, get_gradient_diversity, FeedbackSampler, projection
 
 from utils import FedAWARE_Projector, agnews_evaluate
 from agnews_dataset import get_AGNEWs_testloader
+from base_trainer import SerialClientTrainer
 
-
-class FedOptServerHandler_(FedAvgServerHandler):
+class FedAMSServerHandler(FedAvgServerHandler):
     def setup_optim(self, sampler, args):
         self.n = self.num_clients
         self.num_to_sample = int(self.sample_ratio*self.n)
@@ -37,14 +36,18 @@ class FedOptServerHandler_(FedAvgServerHandler):
         # momentum
         self.beta1 = self.args.beta1
         self.beta2 = self.args.beta2
-        self.option = self.args.option
-        self.tau = self.args.tau
-        self.momentum = torch.zeros_like(self.model_parameters)
+
+        self.mt = torch.zeros_like(self.model_parameters)
         self.vt = torch.zeros_like(self.model_parameters)
-        assert self.option in ["adagrad", "yogi", "adam"]
+        self.vt_hat = torch.zeros_like(self.model_parameters)
+        self.eps = torch.ones_like(self.model_parameters)*args.eps
+        
+        self.option = self.args.option
 
         if self.args.projection:
             self.projector = FedAWARE_Projector(self.n, self.args.alpha, self.model_parameters)
+
+        assert self.option in ["fedams", "fedamsgrad"]
 
     @property
     def num_clients_per_round(self):
@@ -63,79 +66,45 @@ class FedOptServerHandler_(FedAvgServerHandler):
         for id in tqdm(id_list):
             dataset = self.dataset.get_dataset(id)
             self.batch_size, self.epochs = get_heterogeneity(args, len(dataset))
-            data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-            #data_loader = self.dataset.get_dataloader(id, self.batch_size)
+            data_loader = self.dataset.get_dataloader(id, self.batch_size)
             pack = self.train(model_parameters, data_loader, loss_, acc_)
             self.cache.append(pack)
         return loss_, acc_
-    
+
     def global_update(self, buffer):
         gradient_list = [torch.sub(ele[0], self.model_parameters) for ele in buffer]
         indices, _ = self.sampler.last_sampled
         delta = Aggregators.fedavg_aggregate(gradient_list, self.args.weights[indices])
-        self.momentum = self.beta1*self.momentum + (1-self.beta1)*delta
-
-        delta_2 = torch.pow(delta, 2)
-        if self.option == "adagrad":
-            self.vt += delta_2
-        elif self.option == "yogi":
-            self.vt = self.vt - (1-self.beta2)*delta_2*torch.sign(self.vt-delta_2)
-        else:
-            # adam
-            self.vt = self.beta2*self.vt + (1-self.beta2)*delta_2
-
-        estimates = self.momentum/(torch.sqrt(self.vt) + self.tau)
+       
+        self.mt = self.beta1*self.mt + (1-self.beta1)*delta
+        self.vt = self.beta2*self.vt + (1-self.beta2)*torch.pow(delta, 2)
         
+        #option 1
+        if self.args.option == "fedams":
+            self.vt_hat = torch.maximum(self.vt_hat, torch.maximum(self.vt, self.eps))
+            estimates = self.mt/(torch.sqrt(self.vt_hat))
+            # serialized_parameters = self.model_parameters + self.lr*self.mt/(torch.sqrt(self.vt_hat))
+        # option 2
+        elif self.args.option == "fedamsgrad":
+            self.vt_hat = torch.maximum(self.vt_hat, self.vt)
+            estimates = self.mt/(torch.sqrt(self.vt_hat) + self.eps)
+            # serialized_parameters = self.model_parameters + self.lr*self.mt/(torch.sqrt(self.vt_hat) + self.eps)
+
         if self.args.projection:
             self.projector.momentum_update(gradient_list, indices)
             if self.sampler.explored:
                 gdm_estimates = self.projector.compute_estimates()
                 estimates = self.projector.projection(estimates, gdm_estimates)
-
+        
         serialized_parameters = self.model_parameters + self.lr*estimates
         self.set_model(serialized_parameters)
 
-class FedOptSerialClientTrainer_(SerialClientTrainer):
+class FedAMSSerialClientTrainer(SerialClientTrainer): 
     ...
-    # def local_process(self, payload, id_list):
-    #     model_parameters = payload[0]
-    #     loss_, acc_ = AverageMeter(), AverageMeter()
-        
-    #     for id in tqdm(id_list):
-    #         dataset = self.dataset.get_dataset(id)
-    #         self.batch_size, self.epochs = get_heterogeneity(args, len(dataset))
-    #         data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-    #         #data_loader = self.dataset.get_dataloader(id, self.batch_size)
-    #         pack = self.train(model_parameters, data_loader, loss_, acc_)
-    #         self.cache.append(pack)
-    #     return loss_, acc_
-
-    # def train(self, model_parameters, train_loader, loss_, acc_): 
-    #     self.set_model(model_parameters)
-    #     self._model.train()
-
-    #     for _ in range(self.epochs):
-    #         for data, target in train_loader:
-    #             if self.cuda:
-    #                 data = data.cuda(self.device)
-    #                 target = target.cuda(self.device)
-
-    #             output = self.model(data)
-    #             loss = self.criterion(output, target)
-
-    #             self.optimizer.zero_grad()
-    #             loss.backward()
-    #             self.optimizer.step()
-
-    #             _, predicted = torch.max(output, 1)
-    #             loss_.update(loss.item())
-    #             acc_.update(torch.sum(predicted.eq(target)).item(), len(target))
-
-    #     return [self.model_parameters]
 
 
 args = parse_args()
-args.method = "fedopt"
+args.method = "fedams"
 args.k = int(args.num_clients*args.sample_ratio)
 setup_seed(args.seed)
 
@@ -147,12 +116,12 @@ model, dataset, weights, gen_test_loader = get_settings(args)
 args.weights = weights
 
 # trainer
-trainer = FedOptSerialClientTrainer_(model, args.num_clients, cuda=True)
+trainer = FedAMSSerialClientTrainer(model, args.num_clients, cuda=True)
 trainer.setup_optim(args.epochs, args.batch_size, args.lr, args)
 trainer.setup_dataset(dataset)
 
 # server-sampler
-handler = FedOptServerHandler_(model=model,
+handler = FedAMSServerHandler(model=model,
                         global_round=args.com_round,
                         sample_ratio=args.sample_ratio)
 handler.num_clients = trainer.num_clients
@@ -181,7 +150,7 @@ while handler.if_stop is False:
     
     for pack in full_info:
         handler.load(pack)
-    
+
     if t==0 or (t+1)%args.freq == 0:
         if args.dataset == "agnews":
             gen_test_loader = get_AGNEWs_testloader()
@@ -197,6 +166,6 @@ while handler.if_stop is False:
         writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
 
         print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, 0,  0, tacc, tloss))
-    t += 1
 
+    t += 1
 writer.close()

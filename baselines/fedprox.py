@@ -151,13 +151,16 @@ while handler.if_stop is False:
     for pack in full_info:
         handler.load(pack)
 
-    tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
-    
-    writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
-    writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
+    if t==0 or (t+1)%args.freq == 0:
+        tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
+        
+        writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
+        writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
 
-    writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
-    writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
+        writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
+        writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
 
-    print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, 0,  0, tacc, tloss))
+        print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, 0,  0, tacc, tloss))
     t += 1
+
+writer.close()

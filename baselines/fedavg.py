@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from fedlab.utils.aggregator import Aggregators
 from fedlab.utils.serialization import SerializationTool
-from fedlab.utils.functional import evaluate, get_best_gpu
+from fedlab.utils.functional import get_best_gpu
 
 from fedlab.contrib.algorithm.basic_server import SyncServerHandler
 from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
@@ -22,13 +22,13 @@ from fedlab.contrib.algorithm.basic_client import SGDSerialClientTrainer
 from fedlab.utils.functional import evaluate, setup_seed, AverageMeter
 from fedlab.contrib.algorithm.fedavg import FedAvgSerialClientTrainer
 
-from utils import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity, get_gradient_diversity
+from utils import FedAvgSerialClientTrainer, UniformSampler, solver, gradient_diversity, FeedbackSampler
 
 from torch.utils.tensorboard import SummaryWriter
 
-from min_norm_solvers import MinNormSolver, gradient_normalizers
 from settings import get_settings, get_heterogeneity, get_logs, parse_args
-
+from utils import FedAWARE_Projector, agnews_evaluate
+from agnews_dataset import get_AGNEWs_testloader
 
 class FedAvgServerHandler(SyncServerHandler):
     def setup_optim(self, sampler, args):  
@@ -41,8 +41,11 @@ class FedAvgServerHandler(SyncServerHandler):
         self.lr = args.glr
         self.k = args.k
         self.method = args.method
-        self.solver = MinNormSolver
-    
+
+        if self.args.projection:
+            self.projector = FedAWARE_Projector(self.n, self.args.alpha, self.model_parameters)
+
+
     @property
     def num_clients_per_round(self):
         return self.round_clients
@@ -58,10 +61,34 @@ class FedAvgServerHandler(SyncServerHandler):
         indices, _ = self.sampler.last_sampled
         estimates = Aggregators.fedavg_aggregate(gradient_list, self.args.weights[indices])
 
+        if self.args.projection:
+            self.projector.momentum_update(gradient_list, indices)
+            if self.sampler.explored:
+                gdm_estimates = self.projector.compute_estimates()
+                estimates = self.projector.projection(estimates, gdm_estimates)
+
         serialized_parameters = self.model_parameters - self.lr*estimates
         SerializationTool.deserialize_model(self._model, serialized_parameters)
+        self.estimates = estimates
 
 class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
+    def setup_optim(self, epochs, batch_size, lr, args=None):
+        """Set up local optimization configuration.
+
+        Args:
+            epochs (int): Local epochs.
+            batch_size (int): Local batch size. 
+            lr (float): Learning rate.
+        """
+        self.args = args
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.lr = lr
+        self.optimizer = torch.optim.SGD(self._model.parameters(), lr)
+        # self.optimizer = torch.optim.AdamW(self._model.parameters(), lr)
+        # self.optimizer = torch.optim.Adam(self._model.parameters(), lr)
+        self.criterion = torch.nn.CrossEntropyLoss()
+
     """Federated client with local SGD solver."""
     def query_loss(self):
         loss = []
@@ -80,8 +107,8 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
         for id in tqdm(id_list):
             dataset = self.dataset.get_dataset(id)
             self.batch_size, self.epochs = get_heterogeneity(args, len(dataset))
-            data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-            #data_loader = self.dataset.get_dataloader(id, self.batch_size)
+            #data_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            data_loader = self.dataset.get_dataloader(id, self.batch_size)
             pack = self.train(model_parameters, data_loader, loss_, acc_)
             self.cache.append(pack)
         return loss_, acc_
@@ -89,26 +116,49 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
     def train(self, model_parameters, train_loader, loss_, acc_): 
         self.set_model(model_parameters)
         self._model.train()
+        
+        if self.args.dataset == "agnews":
+            for _ in range(self.epochs):
+                for data in train_loader:
+                    if self.cuda:
+                        label, input_ids, mask = data['label'], data["input_ids"], data["attention_mask"]
+                        input_ids = torch.Tensor(input_ids)
+                        mask = torch.Tensor(mask)
+                        label = torch.Tensor(label).to(dtype=torch.long)
 
-        for _ in range(self.epochs):
-            for data, target in train_loader:
-                if self.cuda:
-                    data = data.cuda(self.device)
-                    target = target.cuda(self.device)
+                        input_ids = input_ids.to(device=self.device, dtype=torch.long)
+                        mask = torch.Tensor(mask).to(device=self.device, dtype=torch.long)
+                        target = label.to(device=self.device, dtype=torch.long)
 
-                output = self.model(data)
-                loss = self.criterion(output, target)
+                    output = self.model(input_ids, mask)["logits"]
+                    loss = self.criterion(output, target)
 
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
 
-                _, predicted = torch.max(output, 1)
-                loss_.update(loss.item())
-                acc_.update(torch.sum(predicted.eq(target)).item(), len(target))
+                    _, predicted = torch.max(output, 1)
+                    loss_.update(loss.item())
+                    acc_.update(torch.sum(predicted.eq(target)).item(), len(target))
+        else:
+            for _ in range(self.epochs):
+                for data, target in train_loader:
+                    if self.cuda:
+                        data = data.cuda(self.device)
+                        target = target.cuda(self.device)
+
+                    output = self.model(data)
+                    loss = self.criterion(output, target)
+
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+
+                    _, predicted = torch.max(output, 1)
+                    loss_.update(loss.item())
+                    acc_.update(torch.sum(predicted.eq(target)).item(), len(target))
 
         return [self.model_parameters]
-
 
 args = parse_args()
 args.method = "fedavg"
@@ -120,14 +170,13 @@ writer = SummaryWriter(path)
 json.dump(vars(args), open(os.path.join(path, "config.json"), "w"))
 
 model, dataset, weights, gen_test_loader = get_settings(args)
+model.cuda()
 args.weights = weights
 
-if args.method == "fedavg":
-    probs = np.ones(args.num_clients)/args.num_clients
-    sampler = UniformSampler(args.num_clients, probs)
+sampler = FeedbackSampler(args.num_clients)
     
 trainer = FedAvgSerialClientTrainer(model, args.num_clients, cuda=True)
-trainer.setup_optim(args.epochs, args.batch_size, args.lr)
+trainer.setup_optim(args.epochs, args.batch_size, args.lr, args)
 trainer.setup_dataset(dataset)
 
 # server-sampler
@@ -158,16 +207,28 @@ while handler.if_stop is False:
     writer.add_scalar('Metric/MaxNorm/{}'.format(args.dataset), max(norms), t)
     writer.add_scalar('Metric/MinNorm/{}'.format(args.dataset), min(norms), t)
 
+    estimates = Aggregators.fedavg_aggregate(gradient_list, weights[sampled_clients])
+    f_norm = torch.norm(estimates, p=2, dim=0).item()
+    writer.add_scalar('Metric/GlobalNorm/{}'.format(args.dataset), f_norm, t)
+
     for pack in full_info:
         handler.load(pack)
 
-    tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
+    if t==0 or (t+1)%args.freq == 0:
+        if args.dataset == "agnews":
+            gen_test_loader = get_AGNEWs_testloader()
+            tloss, tacc = agnews_evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
+        else:
+            tloss, tacc = evaluate(handler._model, nn.CrossEntropyLoss(), gen_test_loader)
+        
+        writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
+        writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
+
+        writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
+        writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
+
+        print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
     
-    writer.add_scalar('Train/loss/{}'.format(args.dataset), train_loss.avg, t)
-    writer.add_scalar('Train/accuracy/{}'.format(args.dataset), train_acc.avg, t)
-
-    writer.add_scalar('Test/loss/{}'.format(args.dataset), tloss, t)
-    writer.add_scalar('Test/accuracy/{}'.format(args.dataset), tacc, t)
-
-    print("Round {}, Loss {:.4f}, Accuracy: {:.4f}, Generalization: {:.4f}-{:.4f}".format(t, train_loss.avg,  train_acc.avg, tacc, tloss))
     t += 1
+
+writer.close()
