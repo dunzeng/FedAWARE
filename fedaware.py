@@ -38,13 +38,10 @@ class FedAvgSerialClientTrainer(SGDSerialClientTrainer):
 
         self.criterion = torch.nn.CrossEntropyLoss()
 
-    def local_process(self, payload, id_list, t):
+    def local_process(self, payload, id_list):
         model_parameters = payload[0]
         loss_ = AverageMeter()
         acc_ = AverageMeter()
-
-        for g in self.optimizer.param_groups:
-            g['lr'] = self.lr*(0.999**t)
 
         for id in tqdm(id_list):
             dataset = self.dataset.get_dataset(id)
@@ -201,7 +198,7 @@ while handler.if_stop is False:
         sampled_clients = handler.sample_clients(args.k)
 
     # client side
-    train_loss, train_acc = trainer.local_process(broadcast, sampled_clients, t)
+    train_loss, train_acc = trainer.local_process(broadcast, sampled_clients)
     full_info = trainer.uplink_package
     
     # diversity
