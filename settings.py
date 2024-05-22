@@ -1,8 +1,6 @@
 import numpy as np
 import os
-import torch
-from torch import nn, softmax
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
 import argparse
@@ -12,23 +10,13 @@ from fedlab.models.mlp import MLP
 from fedlab.contrib.dataset.pathological_mnist import PathologicalMNIST
 from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from fedlab.contrib.dataset.partitioned_cifar10 import PartitionedCIFAR10
-from fedlab.utils.dataset.partition import CIFAR100Partitioner
 
-from model import (
-    ToyCifarNet,
-    LinearReg,
-    resnet18,
-    ToyCifar100Net,
-    vgg11_bn)
+from model import ToyCifarNet
 
 from torchvision import transforms
 from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
-from fedlab.models.cnn import CNN_FEMNIST
-from fedlab.core.standalone import StandalonePipeline
 from partitioned_fmnist import PartitionedFMNIST, PathologicalFMNIST
 from agnews_dataset import PartitionedAGNews, AGNews_TestDataset
-from tqdm import tqdm
-
 
 def get_settings(args):
     if args.dataset == "mnist":
@@ -285,6 +273,7 @@ def parse_args():
     parser.add_argument("-dseed", type=int, default=0)  # data seed
 
     parser.add_argument("-freq", type=int, default=1) 
+    
     # fedavgm
     parser.add_argument("-fedm_beta", type=float)
 
@@ -292,8 +281,7 @@ def parse_args():
     parser.add_argument("-mu", type=float)
 
     # fedopt
-    # adagrad, yogi, adam
-    parser.add_argument("-option", type=str, default="yogi")
+    parser.add_argument("-option", type=str, default="yogi") # adagrad, yogi, adam
     parser.add_argument("-beta1", type=float)
     parser.add_argument("-beta2", type=float)
     parser.add_argument("-tau", type=float)
@@ -301,7 +289,6 @@ def parse_args():
     # fedams
     # parser.add_argument('-option', type=str, default="fedams") # fedams, fedamsgrad
     parser.add_argument("-eps", type=float)
-    # parser.add_argument('-max_init', type=float)
 
     # fednova
 

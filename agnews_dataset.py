@@ -1,10 +1,15 @@
 import pandas as pd
 import numpy as np
 import os
-from fedlab.contrib.dataset.basic_dataset import FedDataset, Subset, BaseDataset
 import torch
-from torch.utils.data import DataLoader
 from datasets import Dataset
+from transformers import AutoTokenizer
+from datasets import Dataset
+import os
+import pandas as pd
+import torch
+import numpy as np
+
 
 class PartitionedAGNews():
     def __init__(self, root, path, num_clients) -> None:
@@ -68,6 +73,7 @@ def AGNews_TestDataset(tokenizer, batch_size=256):
             output -> tokenized dataset (columns = text, label, input, attention)
             """
             return tokenizer(examples["text"], truncation=True, padding=True, max_length=100)
+    
         # This step isn't mentioned anywhere but is vital as Transformers library only seems to work with this Dataset data type
         dataset = Dataset.from_pandas(dataframe, preserve_index=False)
         tokenized_ds = dataset.map(preprocess_function, batched=True)
@@ -91,21 +97,13 @@ def get_AGNEWs_testloader(batch_size=1024):
 
 if __name__ == "__main__":
     dataset = PartitionedAGNews(root="datasets", path="datasets/partitioned_agnews", num_clients=100)
-    dataset.preprocess()
-    test_loader = AGNews_TestDataset()
-
+    # dataset.preprocess()
     # data partition and preprocessing
-
-    from transformers import AutoTokenizer, DataCollatorWithPadding
-    from transformers import AutoModelForSequenceClassification, TrainingArguments, Trainer
-    from datasets import Dataset
-    import os
-    import pandas as pd
-    import torch
 
     # load tokenizer from bert base uncased model available from huggingface.co
     # tokenizer=AutoTokenizer.from_pretrained("/data/distilbert")
     tokenizer=AutoTokenizer.from_pretrained("/data/pythia-70m")
+    test_loader = AGNews_TestDataset(tokenizer)
     df = pd.read_csv("datasets/agnews/train.csv")
     df = df.rename(columns={oc:nc for oc, nc in zip(list(df.columns), ['label','Title', 'Description'])})
     df['text']=(df['Title']+df['Description'])
@@ -133,8 +131,6 @@ if __name__ == "__main__":
         tokenized_ds = dataset.map(preprocess_function, batched=True)
         tokenized_ds = tokenized_ds.remove_columns('text')
         return tokenized_ds
-
-    import numpy as np
 
     def hetero_dir_partition(targets, num_clients, num_classes, dir_alpha, min_require_size=None):
         if min_require_size is None:

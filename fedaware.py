@@ -126,8 +126,6 @@ class Server_MomentumGradientCache(SyncServerHandler):
     def compute_lambda(self, vectors):
         sol, val = self.solver.find_min_norm_element_FW(vectors)
         print("FW solver - val {} density {}".format(val, (sol>0).sum()))
-        # self.stats["count"] += sol>0
-        # sol = sol/sol.sum()
         assert sol.sum()-1 < 1e-5
         return sol
     
