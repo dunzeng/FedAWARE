@@ -223,7 +223,7 @@ def get_logs(args):
         log = "Setting_{}_GLR{}_{}_eps{}_{}".format(
             args.method, args.glr, args.option, args.eps, run_time
         )
-    elif args.method == "ours":
+    elif args.method == "fedaware":
         log = "Setting_{}_GLR{}_momentum{}_{}_{}".format(
             "fedaware", args.glr, args.alpha, args.label, run_time
         )
@@ -273,7 +273,7 @@ def parse_args():
     parser.add_argument("-dseed", type=int, default=0)  # data seed
 
     parser.add_argument("-freq", type=int, default=1) 
-    
+
     # fedavgm
     parser.add_argument("-fedm_beta", type=float)
 

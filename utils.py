@@ -44,9 +44,13 @@ from min_norm_solvers import MinNormSolver, gradient_normalizers
 def gradient_diversity(gradients, weights=None):
     if weights is None:
         weights = 1/np.ones(len(gradients))
-    norms = [torch.norm(grad, p=2, dim=0).item() for grad in gradients]
-    d = Aggregators.fedavg_aggregate(gradients, weights)
-    diversity = sum(norms)/len(norms)/torch.norm(d, p=2, dim=0).item()
+    else:
+        weights = weights/weights.sum()
+    # norms = [torch.norm(grad, p=2, dim=0).item() for grad in gradients]
+    norms = [torch.norm(grad, p=2, dim=0).item()**2 for grad in gradients]
+    d = Aggregators.fedavg_aggregate(gradients)
+    d_norm = torch.norm(d, p=2, dim=0).item()
+    diversity = np.sqrt(sum(norms)/len(norms))/d_norm
     return diversity
 
 def get_gradient_diversity(gradients, global_gradients):
