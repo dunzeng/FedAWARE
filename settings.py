@@ -16,6 +16,8 @@ from model import ToyCifarNet
 from torchvision import transforms
 from fedlab.contrib.dataset.partitioned_mnist import PartitionedMNIST
 from partitioned_fmnist import PartitionedFMNIST, PathologicalFMNIST
+from fedlab.utils.dataset.partition import CIFAR100Partitioner
+from partitioned_cifar100 import PartitionedCIFAR100
 from agnews_dataset import PartitionedAGNews, AGNews_TestDataset
 
 def get_settings(args):
@@ -153,6 +155,82 @@ def get_settings(args):
             ),
         )
         gen_test_loader = DataLoader(test_data, num_workers=4, batch_size=1024)
+
+    elif args.dataset == "cifar100":
+        # model = vgg11_bn(bn=False, num_class=100)
+        # model = resnet18()
+        # model = ToyCifar100Net()
+        from model import ResNet18_gn
+        model = ResNet18_gn()
+        trainset = torchvision.datasets.CIFAR100(
+            root="./datasets/cifar100/", train=True, download=True
+        )
+        
+        if args.partition == "dirichlet":
+            hetero_dir_part = CIFAR100Partitioner(
+                trainset.targets,
+                args.num_clients,
+                balance=None,
+                partition="dirichlet",
+                dir_alpha=args.dir,
+                seed=args.seed,
+            )
+
+            dataset = PartitionedCIFAR100(
+                root="./datasets/cifar100/",
+                path="./datasets/Dirichlet_cifar100_{}".format(args.dir),
+                dataname="cifar100",
+                num_clients=args.num_clients,
+                preprocess=args.preprocess,
+                partitioner=hetero_dir_part,
+                transform=transforms.Compose(
+                    [
+                        transforms.ToTensor(),
+                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                    ]
+                ),
+            )
+        if args.partition == "pathological":
+            pathological_part = CIFAR100Partitioner(
+                trainset.targets,
+                args.num_clients,
+                balance=None,
+                num_shards=200,
+                partition="shards",
+                dir_alpha=args.dir,
+                seed=args.seed,
+            )
+
+            dataset = PartitionedCIFAR100(
+                root="./datasets/cifar100/",
+                path="./datasets/Pathological_cifar100",
+                dataname="cifar100",
+                num_clients=args.num_clients,
+                preprocess=args.preprocess,
+                partitioner=pathological_part,
+                transform=transforms.Compose(
+                    [
+                        transforms.ToTensor(),
+                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                    ]
+                ),
+            )
+        weights = np.array(
+            [len(dataset.get_dataset(i, "train")) for i in range(args.num_clients)]
+        )
+        weights = weights / weights.sum()
+
+        test_data = torchvision.datasets.CIFAR100(
+            root="./datasets/cifar100/",
+            train=False,
+            transform=transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                ]
+            ),
+        )
+        gen_test_loader = DataLoader(test_data, batch_size=1024, num_workers=4)
 
     elif args.dataset == "agnews":
         from transformers import TextClassificationPipeline, AutoTokenizer, AutoModelForSequenceClassification
