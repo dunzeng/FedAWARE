@@ -1,6 +1,6 @@
 # FedAWARE
 
- Code for paper "[Tackling Hybrid Heterogeneity on Federated Optimization via Gradient Diversity Maximization](https://arxiv.org/abs/2310.02702)".
+ Code for paper "[On the Power of Adaptive Weighted Aggregation in Heterogeneous Federated Learning and Beyond](https://arxiv.org/abs/2310.02702)".
 
 
 ## Dependencies
@@ -32,10 +32,13 @@ python fedaware.py -num_clients 100 \
 Please cite our paper if you found the code useful.
 
 ```
-@article{zeng2023tackling,
-  title={Tackling Hybrid Heterogeneity on Federated Optimization via Gradient Diversity Maximization},
-  author={Zeng, Dun and Xu, Zenglin and Pan, Yu and Wang, Qifan and Tang, Xiaoying},
-  journal={arXiv preprint arXiv:2310.02702},
-  year={2023}
+@misc{zeng2024poweradaptiveweightedaggregation,
+      title={On the Power of Adaptive Weighted Aggregation in Heterogeneous Federated Learning and Beyond}, 
+      author={Dun Zeng and Zenglin Xu and Shiyu Liu and Yu Pan and Qifan Wang and Xiaoying Tang},
+      year={2024},
+      eprint={2310.02702},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2310.02702}, 
 }
 ```
