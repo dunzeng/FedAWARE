@@ -1,5 +1,8 @@
 # FedAWARE
 
+ Code for AISTATS'25 paper "[On the Power of Adaptive Weighted Aggregation in Heterogeneous Federated Learning and Beyond](https://arxiv.org/abs/2310.02702)".
+
+
 ## Dependencies
 
  `pip install -r requirement.txt`
@@ -25,11 +28,13 @@ python fedaware.py.py -num_clients 100 \
 
 For Agnews task, please run ```python agnews_dataset.py``` to preprocess Agnews dataset. And, download pythia model from https://huggingface.co/EleutherAI/pythia-70m.
 
+see utils.py FedAWARE_Projector class for our implementation details.
+
+
 Note:
 
 Due to attachment size limitations, we only show the implementation details of our work here.  And, please see utils.py FedAWARE_Projector class for our implementation details.
 
-Full experiment results and their reproduction scripts will be released if accepted.
 
 ## Reference
 
