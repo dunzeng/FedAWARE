@@ -32,7 +32,7 @@ Note:
 
 - Please see utils.py FedAWARE_Projector class for our implementation details.
 
-- Leave a issue if you have any question.
+- Leave an issue if you have any questions.
 
 ## Reference
 
