@@ -1,8 +1,5 @@
 # FedAWARE
 
- Code for paper "[On the Power of Adaptive Weighted Aggregation in Heterogeneous Federated Learning and Beyond](https://arxiv.org/abs/2310.02702)".
-
-
 ## Dependencies
 
  `pip install -r requirement.txt`
@@ -10,24 +7,31 @@
 ## Run
 
 ```
-python fedaware.py -num_clients 100 \
+python fedaware.py.py -num_clients 100 \
                     -com_round 500 \
                     -sample_ratio 0.1 \
                     -batch_size 64 \
                     -epochs 3 \
                     -lr 0.01 \
                     -glr 1 \
-                    -dseed 37 \
-                    -seed 1998 \
-                    -partition [pathological/dirichlet] \
-                    -dataset [mnist\fmnist\cifar10] \
-                    -alpha 0.5 \
-                    -startup 1 \
-                    -agnostic [0\1] \
-                    -preprocess 1
+                    -dseed 37 [data partition random seed] \
+                    -seed 42 [running random seed] \
+                    -partition dirichlet \
+                    -dir 0.1 \
+                    -dataset [cifar10/cifar100/agnews] \
+                    -alpha 0.5 [hyperparameters]\
+                    -preprocess 1 [dataset preprocesssing] 
 ```
 
-## Citation
+For Agnews task, please run ```python agnews_dataset.py``` to preprocess Agnews dataset. And, download pythia model from https://huggingface.co/EleutherAI/pythia-70m.
+
+Note:
+
+Due to attachment size limitations, we only show the implementation details of our work here.  And, please see utils.py FedAWARE_Projector class for our implementation details.
+
+Full experiment results and their reproduction scripts will be released if accepted.
+
+## Reference
 
 Please cite our paper if you found the code useful.
 
@@ -40,5 +44,11 @@ Please cite our paper if you found the code useful.
       archivePrefix={arXiv},
       primaryClass={cs.LG},
       url={https://arxiv.org/abs/2310.02702}, 
+}
+
+@inproceedings{zengpower,
+  title={On the Power of Adaptive Weighted Aggregation in Heterogeneous Federated Learning and Beyond},
+  author={Zeng, Dun and Xu, Zenglin and LIU, SHIYU and Pan, Yu and Wang, Qifan and Tang, Xiaoying},
+  booktitle={The 28th International Conference on Artificial Intelligence and Statistics}
 }
 ```
