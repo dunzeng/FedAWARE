@@ -26,15 +26,13 @@ python fedaware.py.py -num_clients 100 \
                     -preprocess 1 [dataset preprocesssing] 
 ```
 
-For Agnews task, please run ```python agnews_dataset.py``` to preprocess Agnews dataset. And, download pythia model from https://huggingface.co/EleutherAI/pythia-70m.
-
-see utils.py FedAWARE_Projector class for our implementation details.
-
-
 Note:
 
-Due to attachment size limitations, we only show the implementation details of our work here.  And, please see utils.py FedAWARE_Projector class for our implementation details.
+- For Agnews task, please run ```python agnews_dataset.py``` to preprocess Agnews dataset. And, download pythia model from https://huggingface.co/EleutherAI/pythia-70m.
 
+- Please see utils.py FedAWARE_Projector class for our implementation details.
+
+- Leave a issue if you have any question.
 
 ## Reference
 
