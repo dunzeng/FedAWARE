@@ -84,15 +84,18 @@ def AGNews_TestDataset(tokenizer, batch_size=256):
     torch.save(tokenized_dataset,os.path.join("datasets/partitioned_agnews", "test", "data.pkl"))
 
     def iteration(dataset, batch_size, idx=0):
-        yield dataset[idx:idx+batch_size]
-        idx += batch_size
+        while idx <= len(dataset): 
+            yield dataset[idx:idx+batch_size]
+            idx += batch_size
     return iteration(tokenized_dataset, batch_size=batch_size)
 
 def get_AGNEWs_testloader(batch_size=1024):
     dataset = torch.load(os.path.join("datasets/partitioned_agnews", "test", "data.pkl"))
+    
     def iteration(dataset, batch_size, idx=0):
-        yield dataset[idx:idx+batch_size]
-        idx += batch_size
+        while idx <= len(dataset): 
+            yield dataset[idx:idx+batch_size]
+            idx += batch_size
     return iteration(dataset, batch_size=batch_size)
 
 if __name__ == "__main__":
