@@ -39,19 +39,12 @@ Note:
 Please cite our paper if you found the code useful.
 
 ```
-@misc{zeng2024poweradaptiveweightedaggregation,
-      title={On the Power of Adaptive Weighted Aggregation in Heterogeneous Federated Learning and Beyond}, 
-      author={Dun Zeng and Zenglin Xu and Shiyu Liu and Yu Pan and Qifan Wang and Xiaoying Tang},
-      year={2024},
-      eprint={2310.02702},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2310.02702}, 
-}
-
-@inproceedings{zengpower,
+@inproceedings{zeng2025power,
   title={On the Power of Adaptive Weighted Aggregation in Heterogeneous Federated Learning and Beyond},
   author={Zeng, Dun and Xu, Zenglin and LIU, SHIYU and Pan, Yu and Wang, Qifan and Tang, Xiaoying},
-  booktitle={The 28th International Conference on Artificial Intelligence and Statistics}
+  booktitle={International Conference on Artificial Intelligence and Statistics},
+  pages={1081--1089},
+  year={2025},
+  organization={PMLR}
 }
 ```
