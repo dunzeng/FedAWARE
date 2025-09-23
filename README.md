@@ -10,7 +10,7 @@
 ## Run
 
 ```
-python fedaware.py.py -num_clients 100 \
+python fedaware.py -num_clients 100 \
                     -com_round 500 \
                     -sample_ratio 0.1 \
                     -batch_size 64 \
